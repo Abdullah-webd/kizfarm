@@ -1,0 +1,167 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #FFFFFF;
+  --foreground: #1A1C1E;
+  --card: #FFFFFF;
+  --card-foreground: #1A1C1E;
+  --popover: #FFFFFF;
+  --popover-foreground: #1A1C1E;
+  --primary: #1B6D24;
+  --primary-foreground: #FFFFFF;
+  --secondary: #E8F5E9;
+  --secondary-foreground: #1A1C1E;
+  --muted: #F3F4F6;
+  --muted-foreground: #6B7280;
+  --accent: #E8F5E9;
+  --accent-foreground: #1B6D24;
+  --destructive: #DC2626;
+  --destructive-foreground: #FFFFFF;
+  --border: #E5E7EB;
+  --input: #E5E7EB;
+  --ring: #1B6D24;
+  --radius: 0.625rem;
+}
+
+@theme inline {
+  --font-sans: 'Inter', sans-serif;
+  
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  
+  /* MD3 Specific */
+  --color-primary-container: #1B6D24;
+  --color-on-primary-container: #FFFFFF;
+  --color-on-primary-fixed: #002108;
+  --color-primary-fixed: #a2f4b5;
+  --color-on-surface: #1A1C1E;
+  --color-on-surface-variant: #6B7280;
+  --color-surface: #F8FAF8;
+  --color-surface-container: #F1F3F1;
+  --color-surface-container-low: #F6F8F6;
+  --color-surface-container-lowest: #FFFFFF;
+  --color-surface-container-high: #EAECE9;
+  --color-surface-variant: #E2E4E0;
+  --color-surface-tint: #1B6D24;
+  --color-secondary-container: #E8F5E9;
+  --color-on-secondary-container: #4B5563;
+  --color-secondary-fixed: #E8F5E9;
+  --color-secondary-fixed-dim: #A5D6A7;
+  --color-on-secondary-fixed: #002108;
+  --color-tertiary: #6D4C41;
+  --color-tertiary-container: #D7CCC8;
+  --color-on-tertiary: #FFFFFF;
+  --color-on-tertiary-container: #3E2723;
+  --color-tertiary-fixed: #EFEBE9;
+  --color-on-tertiary-fixed: #3E2723;
+  --color-outline: #9CA3AF;
+  --color-outline-variant: #E5E7EB;
+
+  /* Spacing Scale Overrides */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-base: 12px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 40px;
+  --spacing-margin: 24px;
+  --spacing-gutter: 16px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Inter', sans-serif;
+    min-height: 100vh;
+  }
+  .material-symbols-outlined {
+    font-family: 'Material Symbols Outlined' !important;
+    font-weight: normal;
+    font-style: normal;
+    font-size: 24px;
+    line-height: 1;
+    letter-spacing: normal;
+    text-transform: none;
+    display: inline-block;
+    white-space: nowrap;
+    word-wrap: normal;
+    direction: ltr;
+    -webkit-font-feature-settings: 'liga';
+    -webkit-font-smoothing: antialiased;
+    font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  }
+}
+
+/* ================================================
+   CRITICAL FIX: Manual Max-Width Utility Overrides
+   Ensures standard max-w-* classes work despite spacing overrides.
+   ================================================ */
+
+.max-w-xs { max-width: 20rem !important; }
+.max-w-sm { max-width: 24rem !important; }
+.max-w-md { max-width: 28rem !important; }
+.max-w-lg { max-width: 32rem !important; }
+.max-w-xl { max-width: 36rem !important; }
+.max-w-2xl { max-width: 42rem !important; }
+.max-w-3xl { max-width: 48rem !important; }
+.max-w-4xl { max-width: 56rem !important; }
+.max-w-5xl { max-width: 64rem !important; }
+.max-w-6xl { max-width: 72rem !important; }
+.max-w-7xl { max-width: 80rem !important; }
+.max-w-full { max-width: 100% !important; }
+
+/* Utilities */
+.unread-tint { background-color: rgba(27, 109, 36, 0.04); }
+.custom-shadow { box-shadow: 0px 10px 30px rgba(27, 109, 36, 0.05); }
+.organic-elevation { box-shadow: 0px 10px 30px rgba(27, 109, 36, 0.05); }
+.soil-shadow { box-shadow: 0px 10px 30px rgba(27, 109, 36, 0.08); }
+.hide-scrollbar::-webkit-scrollbar { display: none; }
+.hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.form-input-focus:focus {
+  border-color: #1b6d24;
+  box-shadow: 0 0 0 2px rgba(27, 109, 36, 0.1);
+  outline: none;
+}
+
+/* Typography */
+.text-display-xl { font-size: clamp(2.5rem, 8vw, 3.5rem); line-height: 1.1; font-weight: 800; letter-spacing: -0.025em; display: block; width: 100%; }
+.text-display-md { font-size: clamp(2rem, 6vw, 2.5rem); line-height: 1.15; font-weight: 700; letter-spacing: -0.02em; display: block; width: 100%; }
+.text-headline-xl { font-size: 2rem; line-height: 1.2; font-weight: 700; letter-spacing: -0.015em; display: block; width: 100%; }
+.text-headline-lg { font-size: 1.5rem; line-height: 1.3; font-weight: 700; letter-spacing: -0.01em; display: block; width: 100%; }
+.text-headline-md { font-size: 1.125rem; line-height: 1.4; font-weight: 600; display: block; width: 100%; }
+.font-h1 { font-size: 1.75rem; font-weight: 700; }
+.font-h2 { font-size: 1.375rem; font-weight: 700; }
+.font-h3 { font-size: 1.125rem; font-weight: 600; }
+.font-body-lg { font-size: 1.125rem; line-height: 1.6; }
+.font-body-md { font-size: 0.9375rem; line-height: 1.5; }
+.font-body-sm { font-size: 0.8125rem; line-height: 1.5; }
+.font-label-md { font-size: 0.875rem; font-weight: 500; }
+.font-label-sm { font-size: 0.8125rem; font-weight: 500; }
+.font-label-xs { font-size: 0.6875rem; font-weight: 500; }
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 0px); }
