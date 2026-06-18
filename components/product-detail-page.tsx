@@ -1,17 +1,274 @@
 "use client"
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { apiFetch } from "@/lib/kizfarm/api";
+import { startChat } from "@/lib/kizfarm/chat";
+import { useCart } from "@/lib/kizfarm/cart-context";
 
-export default function ProductDetailPage() {
+type FarmerRef =
+  | string
+  | {
+      _id?: string;
+      id?: string;
+      farmerId?: string;
+      farmer_id?: string;
+      userId?: string | { _id?: string; id?: string };
+      user?: string | { _id?: string; id?: string };
+      farmName?: string;
+      name?: string;
+      location?: string;
+    };
+
+interface Product {
+  _id: string;
+  id?: string;
+  userId?: string;
+  name: string;
+  description: string;
+  price: number;
+  category: string;
+  unit: string;
+  quantity: number;
+  images: string[];
+  farmerId?: FarmerRef;
+  farmer?: FarmerRef;
+  farmer_id?: string;
+  seller?: FarmerRef;
+  owner?: FarmerRef;
+  createdAt: string;
+}
+
+interface Review {
+  _id: string;
+  buyerName: string;
+  rating: number;
+  comment: string;
+  createdAt: string;
+}
+
+type Props = {
+  productId?: string;
+};
+
+export default function ProductDetailPage({ productId }: Props) {
+  const router = useRouter();
+  const { addItem, isInCart } = useCart();
+
+  const [product, setProduct] = useState<Product | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [quantity, setQuantity] = useState(1);
+  const [showChatModal, setShowChatModal] = useState(false);
+  const [chatLoading, setChatLoading] = useState(false);
+  const [addedToCart, setAddedToCart] = useState(false);
+
+  // Reviews state
+  const [reviews, setReviews] = useState<Review[]>([]);
+  const [reviewsAvg, setReviewsAvg] = useState(0);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [showReviewForm, setShowReviewForm] = useState(false);
+  const [newRating, setNewRating] = useState(5);
+  const [newComment, setNewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchProduct = async () => {
+      if (!productId) {
+        setError("Product ID not provided");
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        setError(null);
+        const { res, payload } = await apiFetch(`/marketplace/products/${productId}`);
+
+        if (!res.ok) {
+          setError(payload?.error || "Failed to fetch product");
+          setProduct(null);
+          return;
+        }
+
+        setProduct(payload?.product || null);
+      } catch (err) {
+        console.error("Error fetching product:", err);
+        setError("Failed to load product details");
+        setProduct(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchProduct();
+  }, [productId]);
+
+  // Fetch reviews whenever productId changes
+  useEffect(() => {
+    if (!productId) return;
+    const fetchReviews = async () => {
+      setReviewsLoading(true);
+      try {
+        const { res, payload } = await apiFetch(`/buyer/reviews/${productId}`);
+        if (res.ok) {
+          setReviews(payload?.reviews || []);
+          setReviewsAvg(payload?.avg || 0);
+        }
+      } catch {
+        // silently ignore
+      } finally {
+        setReviewsLoading(false);
+      }
+    };
+    fetchReviews();
+  }, [productId]);
+
+  const handleGoBack = () => {
+    router.back();
+  };
+
+  const farmerRef = product?.farmerId || product?.farmer || product?.seller || product?.owner;
+  const farmer = farmerRef && typeof farmerRef === "object" ? farmerRef : null;
+  const farmerName = farmer?.farmName || farmer?.name || "Farmer";
+  const farmerLocation = farmer?.location || "Unknown Location";
+  const chatProductId = product?._id || product?.id || productId || "";
+  const chatFarmerUserId = product?.userId || "";
+
+  const handleChatWithFarmer = async () => {
+    if (!chatFarmerUserId || !chatProductId) {
+      alert("Unable to start chat for this product right now.");
+      return;
+    }
+    try {
+      setChatLoading(true);
+      const chat = await startChat(chatFarmerUserId, chatProductId);
+      router.push(`/buyer/chat/${chat._id}`);
+    } catch (err) {
+      console.error("Error starting chat:", err);
+      alert("Failed to start chat. Please try again.");
+    } finally {
+      setChatLoading(false);
+    }
+  };
+
+  const handleAddToCart = () => {
+    if (!product) return;
+
+    const farmerRef = product.farmerId || product.farmer || product.seller || product.owner;
+    const farmerId = typeof farmerRef === 'string'
+      ? farmerRef
+      : farmerRef?._id || farmerRef?.id || '';
+
+    addItem({
+      productId: product._id,
+      name: product.name,
+      price: product.price,
+      quantity,
+      maxQuantity: product.quantity,
+      unit: product.unit,
+      image: product.images?.[0],
+      farmerId,
+      farmerName,
+    });
+
+    setAddedToCart(true);
+    setTimeout(() => setAddedToCart(false), 2000);
+  };
+
+  const handleSubmitReview = async () => {
+    if (!productId) return;
+    setSubmittingReview(true);
+    setReviewError(null);
+    try {
+      const { res, payload } = await apiFetch(`/buyer/reviews/${productId}`, {
+        method: 'POST',
+        body: JSON.stringify({ rating: newRating, comment: newComment }),
+      });
+      if (!res.ok) {
+        setReviewError(payload?.error || 'Failed to submit review');
+        return;
+      }
+      // Refresh reviews
+      const { res: r2, payload: p2 } = await apiFetch(`/buyer/reviews/${productId}`);
+      if (r2.ok) {
+        setReviews(p2?.reviews || []);
+        setReviewsAvg(p2?.avg || 0);
+      }
+      setShowReviewForm(false);
+      setNewComment('');
+      setNewRating(5);
+    } catch {
+      setReviewError('Failed to submit review');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="bg-background text-on-background font-body-md min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-primary mb-4"></div>
+          <p className="text-on-surface-variant">Loading product details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !product) {
+    return (
+      <div className="bg-background text-on-background font-body-md min-h-screen flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <span className="material-symbols-outlined text-6xl text-error mb-4 block">error_outline</span>
+          <h2 className="font-headline-lg mb-2">Oops!</h2>
+          <p className="text-on-surface-variant mb-6">{error || "Product not found"}</p>
+          <button
+            onClick={handleGoBack}
+            className="px-6 py-3 bg-primary text-white rounded-lg hover:opacity-90 transition-opacity"
+          >
+            Go Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const mainImage = product.images && product.images.length > 0
+    ? product.images[0]
+    : "https://via.placeholder.com/600x400?text=No+Image";
+
+  const thumbnailImages = product.images && product.images.length > 1
+    ? product.images.slice(0, 4)
+    : [mainImage];
+
+  const alreadyInCart = isInCart(product._id);
+
+  function renderStars(rating: number, size = "text-[18px]") {
+    return Array.from({ length: 5 }).map((_, i) => (
+      <span
+        key={i}
+        className={`material-symbols-outlined ${size} text-tertiary`}
+        style={{ fontVariationSettings: i < Math.round(rating) ? "'FILL' 1" : "'FILL' 0" }}
+      >
+        star
+      </span>
+    ));
+  }
+
   return (
     <div className="bg-background text-on-background font-body-md">
       {/* TopAppBar */}
       <nav className="bg-white dark:bg-slate-950 docked full-width top-0 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center px-6 h-16 w-full max-w-[1440px] mx-auto sticky z-50">
         <div className="flex items-center gap-3">
-          <button className="md:hidden p-2 hover:bg-gray-50 dark:hover:bg-gray-900 rounded-full transition-colors">
+          <button
+            onClick={handleGoBack}
+            className="md:hidden p-2 hover:bg-gray-50 dark:hover:bg-gray-900 rounded-full transition-colors"
+          >
             <span className="material-symbols-outlined text-[#1B6D24]">arrow_back</span>
           </button>
-          <img alt="KIZ FARM Logo" className="h-10 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/ADBb0uj23GL1yyohDEuVyudjCde9xNopFZpHCGNijVRI7_HJybbUQd0SFj0Z-XhpQWQnOfiSkEmJWn9d8fKlJFq0qsc3mZlPIrdE4vjs6GDC6u2ke-vkWWQD5xodJ0YjKCA3slbcuEcGZNXYT7Qq_sSEX2IpzueZh-7FgDLuKZT82snUxkiQCv4D4HmN47B9ejnDhm2YojkfYBHAbmSLAQqdHDhiY56I2jeR3l3jAXenLOwCeQTqfgfBawBRJEC9pIKxysbLNjgbJdsM5g" />
+          <img alt="KIZ FARM Logo" className="h-10 w-auto object-contain" src="/logo.jpeg" />
         </div>
         <div className="flex items-center gap-4">
           <div className="hidden md:flex gap-6 mr-8">
@@ -24,7 +281,7 @@ export default function ProductDetailPage() {
             <span className="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
           </button>
           <div className="w-8 h-8 rounded-full overflow-hidden border border-gray-200">
-            <img alt="User Profile" data-alt="close up headshot of a smiling man with a friendly expression in soft natural lighting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCVloDG359znR0oD8OoAHr18zD6gy6q_Y5wYSg2bFmBlknJ5XA_vVBDDxzabbluZap__eEh7S4bIrN-ohYMLsQteToGku6Rrh_EjW4j8F-wyxPw4bQbHLWxUK6-u-hwqvc5WbnooEXY89GEVTwm5VtqJcB2JoEJiHf6YG9rQsb-zqX02o3Ix-g4dclsz3qBQ91YDEX2L6vbgt5JdSMo7IKvZZq7AWmOVR16N_YyfF9xe1l8rixZNCI6O12Hrla-Qog_v7pnfSnUqDc" />
+            <img alt="User Profile" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCVloDG359znR0oD8OoAHr18zD6gy6q_Y5wYSg2bFmBlknJ5XA_vVBDDxzabbluZap__eEh7S4bIrN-ohYMLsQteToGku6Rrh_EjW4j8F-wyxPw4bQbHLWxUK6-u-hwqvc5WbnooEXY89GEVTwm5VtqJcB2JoEJiHf6YG9rQsb-zqX02o3Ix-g4dclsz3qBQ91YDEX2L6vbgt5JdSMo7IKvZZq7AWmOVR16N_YyfF9xe1l8rixZNCI6O12Hrla-Qog_v7pnfSnUqDc" />
           </div>
         </div>
       </nav>
@@ -33,33 +290,39 @@ export default function ProductDetailPage() {
       <main className="max-w-[1440px] mx-auto px-4 md:px-margin py-base md:py-md">
         {/* Breadcrumb (Hidden on Mobile) */}
         <nav className="hidden md:flex items-center gap-2 mb-md text-on-surface-variant font-label-xs">
-          <a className="hover:text-primary" href="#">Market</a>
+          <a className="hover:text-primary cursor-pointer" onClick={handleGoBack}>Market</a>
           <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-          <a className="hover:text-primary" href="#">Vegetables</a>
+          <a className="hover:text-primary">{product.category || "General"}</a>
           <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-          <span className="text-on-surface">Premium Organic Bell Peppers</span>
+          <span className="text-on-surface">{product.name}</span>
         </nav>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
-          {/* Gallery Section (Bento Layout) */}
+          {/* Gallery Section */}
           <div className="lg:col-span-7 flex flex-col gap-xs md:gap-base">
             <div className="w-full aspect-[4/3] md:aspect-[16/10] rounded-xl overflow-hidden bg-surface-container-low group">
-              <img alt="Fresh Bell Peppers" className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" data-alt="extreme close up of vibrant red and yellow bell peppers with water droplets reflecting natural morning sunlight in a farm setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC2Sx4gBPJtd_xs8QwoPKtpeq9w00HdOmkShgdqcU1ZZqoIRro-H5PMup1_Fpvdc-NHBdgF8m4ucMzE180JMxA9TyzgrV5wSGnXz5B5uYlRrKkdN-5_JELuyqy_KTcKj8XosBgTJwPIBV4WCgszumB8WAKeitN8pFEO25Q4gD_jl3A8AZi2mt4HoVZ0huvZ6CNae87pUhCbioqqQ-kHs3Kwq05eNelUfaGJrRiirtkkF8U7ZpCQ7JOfGeaYS3YmlBHYXOFstKPztSU" />
+              <img
+                alt={product.name}
+                className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                src={mainImage}
+              />
             </div>
             <div className="grid grid-cols-4 gap-xs md:gap-base">
-              <button className="aspect-square rounded-lg overflow-hidden border-2 border-primary">
-                <img alt="Bell Pepper Detail" className="w-full h-full object-cover" data-alt="close up of a single ripe red bell pepper sitting on a wooden farm table with earthy textures" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCniGjYsbjgvFNmPzU5cv2_LSR3aWkEyZqI0XXuz2S_cnQKuFCL3N3-BWhDqSoOC9tFLnkR5s_GwDKn58UN3h4PEasPRVJpDlL68oy3ZMJvFqo3tRrF7CC_vtHXUhGCMPlqg7qhP2pYfFYJgjie1dUlJYNH186cDdcM8ljhxd5-ap8KHu5zV5fgjLVrliCM0xtkoYyjZwRQxBbSf7355JdmZJVwUZmlGrcpTRhz34n7HHQBE5I_TchOZVqWa-Ed9MUzfIrOJeLHh98" />
-              </button>
-              <button className="aspect-square rounded-lg overflow-hidden hover:opacity-80 transition-opacity">
-                <img alt="Bell Pepper Detail" className="w-full h-full object-cover" data-alt="top view of a basket filled with harvested green and yellow bell peppers in a sunlit field" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAKyL2GnDj1EJAHrtRZntOXJ58J2O_9n38DiUY3EIPGRQragcgD4QcT8jNSjUdv-30cvRc_91-GwEmF26bwQ6xwgdDs3rTBbMZ6g8bwUbLRkXuYmwaAKeFUqV8zk6BOomw_E3AepYXzAv_WvBR4bl0MQ38wkBa16fwwSD9DcNv8IBh7C2eMysNFGvqjWMTmDgmIMtJZ8Lii8Y6Y5ZC5xnn5mWYOeqCnILQlIoghrDTK6ev8gA20LP6XCymhl2zfEbXP0FC-IgnFkU8" />
-              </button>
-              <button className="aspect-square rounded-lg overflow-hidden hover:opacity-80 transition-opacity">
-                <img alt="Farm Visual" className="w-full h-full object-cover" data-alt="scenic view of a greenhouse interior with rows of healthy pepper plants reaching towards the soft diffused glass light" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDhbkBT0savqU2Lz2l8b6ObwQNkTY3v6coAkL5FXzzDYN1ZgEdiR_ikjagYhdbEfc8fELglFAFFaa-b1NC9UF47NoxAk8rVsSmZMZhzESppaTFtWo70Uqf8JDwmoe7j65OfsWFIzk7oWvcF7wGQujDjQ6UbpWfvR16J-G5YEY4TqGJ3JFm8EEhwejiAFJzCK-2yqPhm1pUFqXlY3_zremlxm8KvzC9S8RBuPfLzMwJVzTO_0SNJzU2uQN1sfnJkZvASxvpMqmBRMHY" />
-              </button>
-              <button className="aspect-square rounded-lg overflow-hidden bg-surface-container-highest relative group">
-                <img alt="More Images" className="w-full h-full object-cover opacity-40" data-alt="abstract artistic shot of fresh soil and green leaves in an organic farm with high contrast shadows" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD6Ov1SGLs2vrsSebXnJ7hiymMjSjeencjCT4ZV7Mw2mK_38q60ustOVLCOc3qBcZFXYMoZ6tZCSzVm6JraaXA7WsK7W1fyDazHU9qMIXu0KO3SCrRxLi-b7Iy4nik9PHe1NNTNatCFi5QdhwE1i4svIh_I2wQSPbYHtAhVP0aAoDimYF7aR485aEO-csGbEeT3qvX7PcWMsoG-1rM0DJLTS_BVyb4dExwinCVRko8YCUhYB5s-jc6CLU33iu1vV4RVYZ4wVmGBl6o" />
-                <div className="absolute inset-0 flex items-center justify-center font-headline-md text-primary">+4</div>
-              </button>
+              {thumbnailImages.map((img, idx) => (
+                <button key={idx} className="aspect-square rounded-lg overflow-hidden border-2 border-primary hover:opacity-80 transition-opacity">
+                  <img
+                    alt={`${product.name} - ${idx + 1}`}
+                    className="w-full h-full object-cover"
+                    src={img}
+                  />
+                </button>
+              ))}
+              {product.images && product.images.length > 4 && (
+                <button className="aspect-square rounded-lg overflow-hidden bg-surface-container-highest relative group">
+                  <img alt="More Images" className="w-full h-full object-cover opacity-40" src={product.images[4]} />
+                  <div className="absolute inset-0 flex items-center justify-center font-headline-md text-primary">+{product.images.length - 4}</div>
+                </button>
+              )}
             </div>
           </div>
 
@@ -72,31 +335,31 @@ export default function ProductDetailPage() {
                   Available Now
                 </span>
                 <div className="flex items-center gap-1 text-tertiary">
-                  <span className="material-symbols-outlined text-[18px]" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                  <span className="font-label-sm">4.9 (128 Reviews)</span>
+                  {renderStars(reviewsAvg)}
+                  <span className="font-label-sm">
+                    {reviewsAvg > 0 ? `${reviewsAvg} (${reviews.length})` : 'No reviews'}
+                  </span>
                 </div>
               </div>
-              <h2 className="font-headline-lg text-on-surface">Premium Organic Bell Peppers (1kg)</h2>
+              <h2 className="font-headline-lg text-on-surface">{product.name}</h2>
               <div className="flex items-baseline gap-2">
-                <span className="font-headline-xl text-primary">₦3,200</span>
-                <span className="text-on-surface-variant line-through font-body-md">₦4,000</span>
+                <span className="font-headline-xl text-primary">₦{product.price.toLocaleString()}</span>
               </div>
             </div>
 
             {/* Farmer Info Card */}
             <div className="p-md bg-white border border-gray-200 rounded-xl flex items-center gap-md">
-              <div className="w-16 h-16 rounded-full overflow-hidden border border-gray-100">
-                <img alt="Farmer" data-alt="portrait of a weathered but smiling elderly farmer wearing a straw hat in front of a sun-drenched cornfield" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD76iVppN8AM0sCBTpncbDFPAUAOO4NbzJdK-s3K3mbknF2Edhpo0GiHZEeB00opUwN22C2vlXeo-CjaIGkmwHsIAr8IIuUg4jDHNT7u9wSmV4BWvSBRtebC9-bVJPASNmGeiGrRdD6T1IEGHqc4BXqqkNXsuvF6YuXL_8yvjaZEzUYq53f7KfmoyMKKfrMKxFTY0XQMIfTikSPlykpnuTOw9q2pu8YEbeGduve1EXcGnZ1UzZhM3nZSJ06Hrfhe-7R-jB97LDCdzI" />
+              <div className="w-16 h-16 rounded-full overflow-hidden border border-gray-100 bg-gray-200 flex items-center justify-center">
+                <span className="material-symbols-outlined text-4xl text-gray-500">account_circle</span>
               </div>
               <div className="flex-1">
-                <h4 className="font-headline-md text-on-surface text-[18px]">Ibrahim Musa</h4>
+                <h4 className="font-headline-md text-on-surface text-[18px]">{farmerName}</h4>
                 <p className="text-on-surface-variant font-label-sm flex items-center gap-1">
                   <span className="material-symbols-outlined text-[16px]">location_on</span>
-                  Kiz Farm, Plateau State
+                  {farmerLocation}
                 </p>
                 <div className="flex gap-2 mt-xs">
-                  <span className="text-[10px] bg-surface-container-highest px-2 py-0.5 rounded text-on-surface-variant font-semibold">CERTIFIED ORGANIC</span>
-                  <span className="text-[10px] bg-surface-container-highest px-2 py-0.5 rounded text-on-surface-variant font-semibold">5+ YEARS PARTNER</span>
+                  <span className="text-[10px] bg-surface-container-highest px-2 py-0.5 rounded text-on-surface-variant font-semibold">VERIFIED SELLER</span>
                 </div>
               </div>
               <button className="w-10 h-10 flex items-center justify-center rounded-full border border-outline-variant text-primary hover:bg-green-50 transition-colors">
@@ -108,36 +371,67 @@ export default function ProductDetailPage() {
             <div className="flex flex-col gap-base">
               <h3 className="font-headline-md text-[20px]">Product Description</h3>
               <p className="text-on-surface-variant font-body-md leading-relaxed">
-                Sourced directly from our organic farms in the fertile highlands of Plateau State. Our bell peppers are hand-picked at peak ripeness to ensure maximum flavor and nutritional value.
-                <br /><br />
-                Grown without synthetic pesticides or fertilizers, these peppers are rich in Vitamin C and antioxidants. Perfect for salads, stir-fries, or stuffing.
+                {product.description || "No description available"}
               </p>
+              {product.unit && (
+                <p className="text-on-surface-variant font-label-sm">
+                  <strong>Unit:</strong> {product.unit}
+                </p>
+              )}
+              {product.quantity && (
+                <p className="text-on-surface-variant font-label-sm">
+                  <strong>Available Quantity:</strong> {product.quantity} {product.unit || "units"}
+                </p>
+              )}
             </div>
 
             {/* Quantity Selector */}
             <div className="flex items-center gap-gutter border-t border-b border-gray-100 py-md">
               <span className="font-headline-md text-[18px]">Quantity</span>
               <div className="flex items-center bg-surface-container-low rounded-xl p-1">
-                <button className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white transition-all text-on-surface">
+                <button
+                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                  className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white transition-all text-on-surface"
+                >
                   <span className="material-symbols-outlined">remove</span>
                 </button>
-                <span className="px-gutter font-headline-md text-[18px]">1</span>
-                <button className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white transition-all text-on-surface">
+                <span className="px-gutter font-headline-md text-[18px]">{quantity}</span>
+                <button
+                  onClick={() => setQuantity(Math.min(product.quantity || Number.MAX_SAFE_INTEGER, quantity + 1))}
+                  disabled={!!product.quantity && quantity >= product.quantity}
+                  className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-white transition-all text-on-surface"
+                >
                   <span className="material-symbols-outlined">add</span>
                 </button>
               </div>
-              <span className="text-on-surface-variant font-label-sm">kg (Approx 4-6 pieces)</span>
+              <span className="text-on-surface-variant font-label-sm">{product.unit || "units"}</span>
             </div>
 
             {/* Desktop Action Buttons */}
             <div className="hidden md:flex gap-gutter mt-base">
-              <button className="flex-1 h-[48px] border-2 border-primary text-primary font-label-sm rounded-xl hover:bg-green-50 transition-all flex items-center justify-center gap-2 active:scale-95 duration-150">
-                <span className="material-symbols-outlined">chat</span>
-                Chat with Farmer
+              <button
+                onClick={handleChatWithFarmer}
+                disabled={chatLoading}
+                className="flex-1 h-[48px] border-2 border-primary text-primary font-label-sm rounded-xl hover:bg-green-50 transition-all flex items-center justify-center gap-2 active:scale-95 duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {chatLoading ? (
+                  <><span className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></span>Starting...</>
+                ) : (
+                  <><span className="material-symbols-outlined">chat</span>Chat with Farmer</>
+                )}
               </button>
-              <button className="flex-[1.5] h-[48px] bg-[#1B6D24] text-white font-label-sm rounded-xl hover:opacity-90 shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 duration-150">
-                <span className="material-symbols-outlined">shopping_cart</span>
-                Add to Cart
+              <button
+                onClick={handleAddToCart}
+                className={`flex-[1.5] h-[48px] font-label-sm rounded-xl shadow-md transition-all flex items-center justify-center gap-2 active:scale-95 duration-150 ${
+                  addedToCart || alreadyInCart
+                    ? 'bg-green-700 text-white'
+                    : 'bg-[#1B6D24] text-white hover:opacity-90'
+                }`}
+              >
+                <span className="material-symbols-outlined">
+                  {addedToCart || alreadyInCart ? 'check_circle' : 'shopping_cart'}
+                </span>
+                {addedToCart ? 'Added!' : alreadyInCart ? 'In Cart' : 'Add to Cart'}
               </button>
             </div>
           </div>
@@ -150,107 +444,132 @@ export default function ProductDetailPage() {
               <h2 className="font-headline-lg mb-xs">Customer Reviews</h2>
               <div className="flex items-center gap-md">
                 <div className="flex text-tertiary">
-                  <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                  <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                  <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                  <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                  <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
+                  {renderStars(reviewsAvg)}
                 </div>
-                <span className="font-headline-md">4.9 / 5.0</span>
+                <span className="font-headline-md">
+                  {reviewsAvg > 0 ? `${reviewsAvg} / 5.0` : 'No ratings yet'}
+                </span>
               </div>
             </div>
-            <button className="text-primary font-label-sm flex items-center gap-1 hover:underline">
-              Write a Review
+            <button
+              onClick={() => setShowReviewForm((p) => !p)}
+              className="text-primary font-label-sm flex items-center gap-1 hover:underline"
+            >
+              {showReviewForm ? 'Cancel' : 'Write a Review'}
               <span className="material-symbols-outlined text-[18px]">edit</span>
             </button>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
-            {/* Review Card 1 */}
-            <div className="p-md bg-white border border-gray-200 rounded-xl hover:shadow-[0px_10px_30px_rgba(27,109,36,0.05)] transition-shadow">
-              <div className="flex items-center gap-base mb-base">
-                <div className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center font-headline-md text-[14px]">AM</div>
-                <div className="flex-1">
-                  <h5 className="font-label-sm">Amina Mohammed</h5>
-                  <div className="flex text-tertiary scale-75 origin-left">
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                  </div>
-                </div>
+
+          {/* Review Form */}
+          {showReviewForm && (
+            <div className="mb-lg p-md bg-white border border-gray-200 rounded-xl max-w-lg">
+              <h3 className="font-headline-md mb-md">Your Review</h3>
+              {/* Star Selector */}
+              <div className="flex gap-1 mb-md">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    onClick={() => setNewRating(star)}
+                    className="text-tertiary"
+                  >
+                    <span
+                      className="material-symbols-outlined text-[28px]"
+                      style={{ fontVariationSettings: star <= newRating ? "'FILL' 1" : "'FILL' 0" }}
+                    >
+                      star
+                    </span>
+                  </button>
+                ))}
               </div>
-              <p className="text-on-surface-variant font-body-md text-sm">Extremely fresh! You can tell they were picked recently. The colors are so vibrant and they taste amazing in salads.</p>
+              <textarea
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                placeholder="Share your experience with this product..."
+                rows={3}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none mb-md"
+              />
+              {reviewError && (
+                <p className="text-red-500 text-sm mb-md">{reviewError}</p>
+              )}
+              <button
+                onClick={handleSubmitReview}
+                disabled={submittingReview}
+                className="px-6 py-2 bg-[#1B6D24] text-white rounded-lg font-label-sm hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {submittingReview ? 'Submitting...' : 'Submit Review'}
+              </button>
             </div>
-            {/* Review Card 2 */}
-            <div className="p-md bg-white border border-gray-200 rounded-xl hover:shadow-[0px_10px_30px_rgba(27,109,36,0.05)] transition-shadow">
-              <div className="flex items-center gap-base mb-base">
-                <div className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center font-headline-md text-[14px]">CO</div>
-                <div className="flex-1">
-                  <h5 className="font-label-sm">Chidi Okafor</h5>
-                  <div className="flex text-tertiary scale-75 origin-left">
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 0" }}>star</span>
+          )}
+
+          {/* Review Cards */}
+          {reviewsLoading ? (
+            <div className="flex items-center gap-2 text-on-surface-variant">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+              Loading reviews...
+            </div>
+          ) : reviews.length === 0 ? (
+            <p className="text-on-surface-variant font-body-md">No reviews yet. Be the first to review!</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-gutter">
+              {reviews.map((review) => {
+                const initials = review.buyerName
+                  .split(' ')
+                  .map((w) => w[0])
+                  .join('')
+                  .slice(0, 2)
+                  .toUpperCase();
+                return (
+                  <div
+                    key={review._id}
+                    className="p-md bg-white border border-gray-200 rounded-xl hover:shadow-[0px_10px_30px_rgba(27,109,36,0.05)] transition-shadow"
+                  >
+                    <div className="flex items-center gap-base mb-base">
+                      <div className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center font-headline-md text-[14px]">
+                        {initials}
+                      </div>
+                      <div className="flex-1">
+                        <h5 className="font-label-sm">{review.buyerName}</h5>
+                        <div className="flex text-tertiary scale-75 origin-left">
+                          {renderStars(review.rating)}
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-on-surface-variant font-body-md text-sm">
+                      {review.comment || <em>No comment</em>}
+                    </p>
                   </div>
-                </div>
-              </div>
-              <p className="text-on-surface-variant font-body-md text-sm">Delivery was on time and the packaging kept the peppers crisp. Will definitely be ordering from Farmer Musa again.</p>
+                );
+              })}
             </div>
-            {/* Review Card 3 (Hidden on mobile) */}
-            <div className="hidden lg:block p-md bg-white border border-gray-200 rounded-xl hover:shadow-[0px_10px_30px_rgba(27,109,36,0.05)] transition-shadow">
-              <div className="flex items-center gap-base mb-base">
-                <div className="w-10 h-10 rounded-full bg-surface-container flex items-center justify-center font-headline-md text-[14px]">SJ</div>
-                <div className="flex-1">
-                  <h5 className="font-label-sm">Sarah Johnson</h5>
-                  <div className="flex text-tertiary scale-75 origin-left">
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                    <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>star</span>
-                  </div>
-                </div>
-              </div>
-              <p className="text-on-surface-variant font-body-md text-sm">The best bell peppers I've found in the city. Truly organic quality. Highly recommended for home cooks.</p>
-            </div>
-          </div>
+          )}
         </section>
       </main>
 
       {/* Sticky Mobile Action Bar */}
       <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-gutter py-md flex gap-base z-[60] shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-        <button className="flex-1 h-[48px] border-2 border-primary text-primary font-label-sm rounded-xl flex items-center justify-center gap-1 active:scale-95 duration-150">
-          <span className="material-symbols-outlined text-[20px]">chat</span>
-          Chat
+        <button
+          onClick={handleChatWithFarmer}
+          disabled={chatLoading}
+          className="flex-1 h-[48px] border-2 border-primary text-primary font-label-sm rounded-xl flex items-center justify-center gap-1 active:scale-95 duration-150 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {chatLoading ? (
+            <span className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></span>
+          ) : (
+            <><span className="material-symbols-outlined text-[20px]">chat</span>Chat</>
+          )}
         </button>
-        <button className="flex-[2] h-[48px] bg-[#1B6D24] text-white font-label-sm rounded-xl flex items-center justify-center gap-2 active:scale-95 duration-150 shadow-md">
-          <span className="material-symbols-outlined text-[20px]">shopping_cart</span>
-          Add to Cart
+        <button
+          onClick={handleAddToCart}
+          className={`flex-[2] h-[48px] font-label-sm rounded-xl flex items-center justify-center gap-2 active:scale-95 duration-150 shadow-md ${
+            addedToCart || alreadyInCart ? 'bg-green-700 text-white' : 'bg-[#1B6D24] text-white'
+          }`}
+        >
+          <span className="material-symbols-outlined text-[20px]">
+            {addedToCart || alreadyInCart ? 'check_circle' : 'shopping_cart'}
+          </span>
+          {addedToCart ? 'Added!' : alreadyInCart ? 'In Cart' : 'Add to Cart'}
         </button>
       </div>
-
-      {/* BottomNavBar (Desktop Navigation Mirror) */}
-      <nav className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 px-2 bg-white/80 backdrop-blur-md border-t border-gray-200 dark:border-gray-800 md:hidden">
-        <a className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 px-4 py-1 hover:text-[#1B6D24] transition-all active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined">home</span>
-          <span className="font-['Inter'] text-[12px] font-semibold mt-1">Home</span>
-        </a>
-        <a className="flex flex-col items-center justify-center text-[#1B6D24] bg-green-50 dark:bg-green-900/20 rounded-xl px-4 py-1 active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>storefront</span>
-          <span className="font-['Inter'] text-[12px] font-semibold mt-1">Market</span>
-        </a>
-        <a className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 px-4 py-1 hover:text-[#1B6D24] transition-all active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined">receipt_long</span>
-          <span className="font-['Inter'] text-[12px] font-semibold mt-1">Orders</span>
-        </a>
-        <a className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 px-4 py-1 hover:text-[#1B6D24] transition-all active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined">person</span>
-          <span className="font-['Inter'] text-[12px] font-semibold mt-1">Profile</span>
-        </a>
-      </nav>
     </div>
   );
 }

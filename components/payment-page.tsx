@@ -13,7 +13,7 @@ export default function PaymentPage() {
               <span className="material-symbols-outlined">arrow_back</span>
             </button>
             <div className="flex items-center gap-2">
-              <img alt="KIZ FARM logo" className="h-8 w-8 object-contain" data-alt="Official KIZ FARM logo featuring a green 'K' with 'KIZ FARM' and 'KIZ EMPIREX' branding" src="https://lh3.googleusercontent.com/aida/ADBb0uj23GL1yyohDEuVyudjCde9xNopFZpHCGNijVRI7_HJybbUQd0SFj0Z-XhpQWQnOfiSkEmJWn9d8fKlJFq0qsc3mZlPIrdE4vjs6GDC6u2ke-vkWWQD5xodJ0YjKCA3slbcuEcGZNXYT7Qq_sSEX2IpzueZh-7FgDLuKZT82snUxkiQCv4D4HmN47B9ejnDhm2YojkfYBHAbmSLAQqdHDhiY56I2jeR3l3jAXenLOwCeQTqfgfBawBRJEC9pIKxysbLNjgbJdsM5g" />
+              <img alt="KIZ FARM logo" className="h-8 w-8 object-contain" data-alt="Official KIZ FARM logo" src="/logo.jpeg" />
               <span className="text-xl font-extrabold tracking-tight text-[#1B6D24] dark:text-green-500 font-inter antialiased">KIZ FARM</span>
             </div>
           </div>

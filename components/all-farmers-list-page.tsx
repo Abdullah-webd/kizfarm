@@ -1,153 +1,338 @@
-"use client"
+"use client";
 
-import React from 'react';
+import React, { useState, useEffect } from "react";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+
+interface Farmer {
+  _id: string;
+  fullName: string;
+  farmName: string;
+  phone: string;
+  status: "approved" | "pending" | "rejected";
+  createdAt: string;
+  userId?: {
+    email: string;
+    phone: string;
+    status: string;
+  };
+}
+
+interface FarmerDetail {
+  farmer: Farmer;
+  activeOrdersCount: number;
+  hasPendingEscrow: boolean;
+}
 
 export default function AllFarmersListPage() {
+  const [farmers, setFarmers] = useState<Farmer[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [searchQ, setSearchQ] = useState("");
+  const [statusFilter, setStatusFilter] = useState("approved");
+
+  // Suspension modal
+  const [showSuspendModal, setShowSuspendModal] = useState(false);
+  const [selectedFarmer, setSelectedFarmer] = useState<Farmer | null>(null);
+  const [suspensionReason, setSuspensionReason] = useState("");
+  const [suspending, setSuspending] = useState(false);
+  const [suspensionError, setSuspensionError] = useState("");
+  const [canSuspend, setCanSuspend] = useState(false);
+  const [checkingEligibility, setCheckingEligibility] = useState(false);
+
+  useEffect(() => {
+    fetchFarmers();
+  }, [statusFilter]);
+
+  const fetchFarmers = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem("kizfarm_token");
+      const params = new URLSearchParams();
+      if (statusFilter !== "all") params.append("status", statusFilter);
+      if (searchQ) params.append("search", searchQ);
+      params.append("limit", "20");
+
+      const res = await fetch(`${API_URL}/admin/farmers?${params}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (data.success) {
+        setFarmers(data.farmers || []);
+        setTotal(data.total || 0);
+      }
+    } catch (err) {
+      console.error("Fetch farmers failed:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openSuspendModal = async (farmer: Farmer) => {
+    setSelectedFarmer(farmer);
+    setSuspensionReason("");
+    setSuspensionError("");
+    setCanSuspend(false);
+    setCheckingEligibility(true);
+    setShowSuspendModal(true);
+
+    try {
+      const token = localStorage.getItem("kizfarm_token");
+      const res = await fetch(`${API_URL}/admin/farmers/${farmer._id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data: { success: boolean } & FarmerDetail = await res.json();
+      if (data.success) {
+        if (data.activeOrdersCount > 0) {
+          setSuspensionError(
+            "This farmer has an active order and cannot be suspended."
+          );
+        } else if (data.hasPendingEscrow) {
+          setSuspensionError(
+            "This farmer cannot be suspended because they have unreleased payments in escrow."
+          );
+        } else {
+          setCanSuspend(true);
+        }
+      }
+    } catch (err) {
+      console.error("Check eligibility failed:", err);
+      setSuspensionError("Failed to check suspension eligibility.");
+    } finally {
+      setCheckingEligibility(false);
+    }
+  };
+
+  const handleSuspend = async () => {
+    if (!selectedFarmer || !canSuspend) return;
+    setSuspending(true);
+    setSuspensionError("");
+
+    try {
+      const token = localStorage.getItem("kizfarm_token");
+      const res = await fetch(
+        `${API_URL}/admin/farmers/${selectedFarmer._id}/suspend`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ reason: suspensionReason }),
+        }
+      );
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setShowSuspendModal(false);
+        fetchFarmers();
+      } else {
+        // Use specific backend error messages mapped to friendly UI
+        if (data.error?.includes("active orders")) {
+          setSuspensionError("This farmer has an active order and cannot be suspended.");
+        } else if (data.error?.includes("escrow")) {
+          setSuspensionError("This farmer cannot be suspended because they have unreleased payments in escrow.");
+        } else {
+          setSuspensionError(data.error || "Failed to suspend farmer");
+        }
+      }
+    } catch (err) {
+      setSuspensionError("Network error. Please try again.");
+    } finally {
+      setSuspending(false);
+    }
+  };
+
+  const handleUnsuspend = async (farmer: Farmer) => {
+    try {
+      const token = localStorage.getItem("kizfarm_token");
+      const res = await fetch(
+        `${API_URL}/admin/farmers/${farmer._id}/unsuspend`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      const data = await res.json();
+      if (res.ok && data.success) fetchFarmers();
+    } catch (err) {
+      console.error("Unsuspend failed:", err);
+    }
+  };
+
+  const handleDelete = async (farmer: Farmer) => {
+    if (
+      !window.confirm(
+        `Are you sure you want to permanently delete farmer "${farmer.fullName}" and all their products? This action cannot be undone.`
+      )
+    )
+      return;
+    try {
+      const token = localStorage.getItem("kizfarm_token");
+      const res = await fetch(`${API_URL}/admin/farmers/${farmer._id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        fetchFarmers();
+      } else {
+        alert(data.error || "Failed to delete farmer");
+      }
+    } catch (err) {
+      console.error("Delete failed:", err);
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case "approved":
+        return "bg-emerald-100/50 text-emerald-700";
+      case "pending":
+        return "bg-amber-100/50 text-amber-700";
+      case "rejected":
+        return "bg-rose-100/50 text-rose-700";
+      default:
+        return "bg-gray-100 text-gray-700";
+    }
+  };
+
+  const getStatusDot = (status: string) => {
+    switch (status) {
+      case "approved":
+        return "bg-emerald-600";
+      case "pending":
+        return "bg-amber-600";
+      case "rejected":
+        return "bg-rose-600";
+      default:
+        return "bg-gray-400";
+    }
+  };
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "approved":
+        return "Verified";
+      case "pending":
+        return "Pending";
+      case "rejected":
+        return "Rejected";
+      default:
+        return status;
+    }
+  };
+
+  const isSuspended = (farmer: Farmer) =>
+    farmer.userId?.status === "suspended";
+
+  const filteredFarmers = farmers.filter((f) => {
+    if (!searchQ) return true;
+    const q = searchQ.toLowerCase();
+    return (
+      f.fullName?.toLowerCase().includes(q) ||
+      f.farmName?.toLowerCase().includes(q) ||
+      f.phone?.toLowerCase().includes(q) ||
+      f.userId?.email?.toLowerCase().includes(q)
+    );
+  });
+
   return (
-    <div className="bg-background text-on-background antialiased" style={{fontFamily: "'Inter', sans-serif", backgroundColor: '#f9f9ff'}}>
-      {/* SideNavBar */}
-      <aside className="fixed left-0 top-0 h-full w-[280px] border-r bg-white border-slate-200 shadow-sm flex flex-col p-4 space-y-2 z-50">
-        <div className="px-4 py-6">
-          <h1 className="text-xl font-black text-emerald-900 tracking-tight">AgriMarket</h1>
-          <p className="text-xs font-label-sm text-slate-500 uppercase tracking-widest mt-1">Admin Dashboard</p>
-        </div>
-        <nav className="flex-1 space-y-1">
-          <a className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-50 transition-all duration-200" href="#">
-            <span className="material-symbols-outlined" data-icon="dashboard">dashboard</span>
-            <span className="font-label-md">Dashboard</span>
-          </a>
-          <a className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-50 transition-all duration-200" href="#">
-            <span className="material-symbols-outlined" data-icon="group">group</span>
-            <span className="font-label-md">Users</span>
-          </a>
-          <a className="flex items-center gap-3 px-4 py-2 rounded-lg bg-emerald-50 text-emerald-800 font-semibold transition-all duration-200 active:scale-[0.98]" href="#">
-            <span className="material-symbols-outlined" data-icon="agriculture" style={{fontVariationSettings: "'FILL' 1"}}>agriculture</span>
-            <span className="font-label-md">Farmers</span>
-          </a>
-          <a className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-50 transition-all duration-200" href="#">
-            <span className="material-symbols-outlined" data-icon="inventory_2">inventory_2</span>
-            <span className="font-label-md">Products</span>
-          </a>
-          <a className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-50 transition-all duration-200" href="#">
-            <span className="material-symbols-outlined" data-icon="shopping_cart">shopping_cart</span>
-            <span className="font-label-md">Orders</span>
-          </a>
-        </nav>
-        <div className="pt-4 border-t border-slate-100 space-y-1">
-          <a className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-50 transition-all duration-200" href="#">
-            <span className="material-symbols-outlined" data-icon="help">help</span>
-            <span className="font-label-md">Support</span>
-          </a>
-          <a className="flex items-center gap-3 px-4 py-2 rounded-lg text-slate-600 hover:bg-slate-50 transition-all duration-200" href="#">
-            <span className="material-symbols-outlined" data-icon="settings">settings</span>
-            <span className="font-label-md">Settings</span>
-          </a>
-        </div>
-      </aside>
-
-      {/* TopNavBar */}
-      <header className="fixed top-0 right-0 left-[280px] h-16 border-b bg-white/80 backdrop-blur-md border-slate-200 z-40">
-        <div className="flex items-center justify-between px-8 w-full h-full">
-          <div className="flex items-center flex-1">
-            <div className="relative w-full max-w-md group">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-500 transition-colors" data-icon="search">search</span>
-              <input className="w-full pl-10 pr-4 py-2 bg-slate-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 transition-all outline-none" placeholder="Search farmers, farms, or locations..." type="text" />
-            </div>
-          </div>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-4">
-              <button className="relative p-2 text-slate-500 hover:text-emerald-700 transition-colors">
-                <span className="material-symbols-outlined" data-icon="notifications">notifications</span>
-                <span className="absolute top-2 right-2 w-2 h-2 bg-error rounded-full"></span>
-              </button>
-              <button className="p-2 text-slate-500 hover:text-emerald-700 transition-colors">
-                <span className="material-symbols-outlined" data-icon="help_outline">help_outline</span>
-              </button>
-            </div>
-            <div className="h-8 w-px bg-slate-200"></div>
-            <div className="flex items-center gap-3 cursor-pointer">
-              <div className="text-right">
-                <p className="text-xs font-bold text-slate-900 leading-tight">Admin Console</p>
-                <p className="text-[10px] text-slate-500 uppercase tracking-tighter">System Admin</p>
-              </div>
-              <img className="w-10 h-10 rounded-full border-2 border-white shadow-sm object-cover" data-alt="professional male admin profile picture in a soft lit office setting with modern aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDeE5AgN-idmLG-49IgteXk-J-8C3u32ZrR6dEKquPDpJk81tvuIWrQaGVqUXYBqCqq7tfIUgj8mq7zWK3c_mQlZTRrLdvfOJHyPNiCZBORboeNYn2FJ5q52nRzYwaTBt4Kp7m-FRCBCLOx3Ac4WVe9O5dM6HVCnWMV0HNX5KfX21lE5dJktqRvPRkxcvC0NBUxES2GcWmH0OzDBahtoD1UlA1JexhytBE6LJVsLUxc2mHBUm_2TGlBKv7PxHHU7J3LTJ5nRQ6K7Jk" />
-            </div>
-          </div>
-        </div>
-      </header>
-
+    <div
+      className="bg-background text-on-background antialiased"
+      style={{ fontFamily: "'Inter', sans-serif", backgroundColor: "#f9f9ff" }}
+    >
       {/* Main Content */}
-      <main className="ml-[280px] pt-16 min-h-screen">
+      <main>
         <div className="p-margin max-w-container-max mx-auto">
           {/* Breadcrumbs & Actions */}
           <div className="flex items-center justify-between mb-lg">
             <div>
               <nav className="flex items-center gap-2 text-slate-500 text-xs mb-1">
                 <span>Admin</span>
-                <span className="material-symbols-outlined text-[14px]" data-icon="chevron_right">chevron_right</span>
+                <span
+                  className="material-symbols-outlined text-[14px]"
+                  data-icon="chevron_right"
+                >
+                  chevron_right
+                </span>
                 <span className="text-emerald-700 font-medium">Farmers</span>
               </nav>
-              <h2 className="font-h1 text-h1 text-slate-900">Farmers Management</h2>
+              <h2 className="font-h1 text-h1 text-slate-900">
+                Farmers Management
+              </h2>
             </div>
             <div className="flex gap-3">
               <button className="flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-lg text-slate-700 font-label-md shadow-sm hover:bg-slate-50 transition-all">
-                <span className="material-symbols-outlined text-[20px]" data-icon="file_download">file_download</span>
+                <span
+                  className="material-symbols-outlined text-[20px]"
+                  data-icon="file_download"
+                >
+                  file_download
+                </span>
                 Export CSV
-              </button>
-              <button className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg font-label-md shadow-sm hover:opacity-90 transition-all active:scale-95">
-                <span className="material-symbols-outlined text-[20px]" data-icon="add">add</span>
-                Add New Farmer
               </button>
             </div>
           </div>
 
-          {/* Stats Overview - Bento Style */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-gutter mb-lg">
+          {/* Stats Overview */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-gutter mb-lg">
             <div className="bg-white p-lg rounded-xl border border-outline-variant shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
               <div className="flex justify-between items-start">
                 <div className="p-2 bg-emerald-50 rounded-lg">
-                  <span className="material-symbols-outlined text-emerald-700" data-icon="groups">groups</span>
+                  <span
+                    className="material-symbols-outlined text-emerald-700"
+                    data-icon="groups"
+                  >
+                    groups
+                  </span>
                 </div>
-                <span className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                  <span className="material-symbols-outlined text-[12px]" data-icon="trending_up">trending_up</span> 12%
-                </span>
               </div>
               <div className="mt-4">
-                <p className="text-slate-500 font-label-sm uppercase tracking-wider">Total Farmers</p>
-                <p className="text-h2 font-h2 text-slate-900">2,842</p>
+                <p className="text-slate-500 font-label-sm uppercase tracking-wider">
+                  Total Farmers
+                </p>
+                <p className="text-h2 font-h2 text-slate-900">{total}</p>
               </div>
             </div>
             <div className="bg-white p-lg rounded-xl border border-outline-variant shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
               <div className="flex justify-between items-start">
                 <div className="p-2 bg-blue-50 rounded-lg">
-                  <span className="material-symbols-outlined text-blue-700" data-icon="verified">verified</span>
+                  <span
+                    className="material-symbols-outlined text-blue-700"
+                    data-icon="verified"
+                  >
+                    verified
+                  </span>
                 </div>
               </div>
               <div className="mt-4">
-                <p className="text-slate-500 font-label-sm uppercase tracking-wider">Verified</p>
-                <p className="text-h2 font-h2 text-slate-900">2,410</p>
-              </div>
-            </div>
-            <div className="bg-white p-lg rounded-xl border border-outline-variant shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
-              <div className="flex justify-between items-start">
-                <div className="p-2 bg-amber-50 rounded-lg">
-                  <span className="material-symbols-outlined text-amber-700" data-icon="pending_actions">pending_actions</span>
-                </div>
-              </div>
-              <div className="mt-4">
-                <p className="text-slate-500 font-label-sm uppercase tracking-wider">Pending</p>
-                <p className="text-h2 font-h2 text-slate-900">384</p>
+                <p className="text-slate-500 font-label-sm uppercase tracking-wider">
+                  Showing
+                </p>
+                <p className="text-h2 font-h2 text-slate-900">
+                  {filteredFarmers.length}
+                </p>
               </div>
             </div>
             <div className="bg-white p-lg rounded-xl border border-outline-variant shadow-sm flex flex-col justify-between hover:shadow-md transition-all">
               <div className="flex justify-between items-start">
                 <div className="p-2 bg-rose-50 rounded-lg">
-                  <span className="material-symbols-outlined text-rose-700" data-icon="error">error</span>
+                  <span
+                    className="material-symbols-outlined text-rose-700"
+                    data-icon="block"
+                  >
+                    block
+                  </span>
                 </div>
               </div>
               <div className="mt-4">
-                <p className="text-slate-500 font-label-sm uppercase tracking-wider">Rejected</p>
-                <p className="text-h2 font-h2 text-slate-900">48</p>
+                <p className="text-slate-500 font-label-sm uppercase tracking-wider">
+                  Suspended
+                </p>
+                <p className="text-h2 font-h2 text-slate-900">
+                  {filteredFarmers.filter((f) => isSuspended(f)).length}
+                </p>
               </div>
             </div>
           </div>
@@ -155,235 +340,263 @@ export default function AllFarmersListPage() {
           {/* Filters Section */}
           <div className="bg-white border border-outline-variant rounded-t-xl p-md flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <button className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-slate-600 font-label-md hover:bg-slate-100 transition-all">
-                <span className="material-symbols-outlined text-[18px]" data-icon="filter_list">filter_list</span>
-                Filters
-              </button>
-              <div className="h-6 w-px bg-slate-200"></div>
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">
+                  search
+                </span>
+                <input
+                  className="pl-9 pr-4 py-1.5 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-emerald-500 outline-none w-56"
+                  placeholder="Search farmers..."
+                  value={searchQ}
+                  onChange={(e) => setSearchQ(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && fetchFarmers()}
+                />
+              </div>
+              <div className="h-6 w-px bg-slate-200" />
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-500 font-medium">Status:</span>
-                <select className="text-xs border-none bg-emerald-50 text-emerald-800 rounded-full py-1 pl-2 pr-8 font-bold focus:ring-0">
-                  <option>All Status</option>
-                  <option>Verified</option>
-                  <option>Pending</option>
-                  <option>Rejected</option>
+                <span className="text-xs text-slate-500 font-medium">
+                  Status:
+                </span>
+                <select
+                  className="text-xs border border-slate-200 bg-white text-slate-700 rounded-lg py-1 pl-2 pr-6 focus:ring-0 focus:outline-none"
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                >
+                  <option value="all">All Status</option>
+                  <option value="approved">Verified</option>
+                  <option value="pending">Pending</option>
+                  <option value="rejected">Rejected</option>
                 </select>
               </div>
             </div>
             <div className="text-sm text-slate-500">
-              Showing <span className="font-bold text-slate-900">1-10</span> of 2,842 farmers
+              Showing{" "}
+              <span className="font-bold text-slate-900">
+                {filteredFarmers.length}
+              </span>{" "}
+              of {total} farmers
             </div>
           </div>
 
           {/* Farmers Table */}
           <div className="bg-white border-x border-b border-outline-variant rounded-b-xl shadow-sm overflow-hidden">
-            <table className="w-full text-left border-collapse">
-              <thead className="bg-slate-50 border-y border-slate-200">
-                <tr>
-                  <th className="px-lg py-3 text-[12px] font-bold text-slate-500 uppercase tracking-wider">
-                    <div className="flex items-center gap-2">
-                      <input className="rounded text-emerald-600 focus:ring-emerald-500" type="checkbox" />
-                      Farmer Name
-                    </div>
-                  </th>
-                  <th className="px-lg py-3 text-[12px] font-bold text-slate-500 uppercase tracking-wider">Farm Name</th>
-                  <th className="px-lg py-3 text-[12px] font-bold text-slate-500 uppercase tracking-wider">Location</th>
-                  <th className="px-lg py-3 text-[12px] font-bold text-slate-500 uppercase tracking-wider">Verification Status</th>
-                  <th className="px-lg py-3 text-[12px] font-bold text-slate-500 uppercase tracking-wider text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {/* Row 1 */}
-                <tr className="hover:bg-slate-50/50 transition-colors group">
-                  <td className="px-lg py-4">
-                    <div className="flex items-center gap-3">
-                      <input className="rounded text-emerald-600 focus:ring-emerald-500" type="checkbox" />
-                      <img className="w-10 h-10 rounded-full object-cover" data-alt="portrait of a weather-beaten farmer in a straw hat with a warm smile and blue overalls" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA4hi2YESVSVme-HXrhvnlpYBrGSAAdZHBeh5M8YAuOmcX2j2OXvURYdisYlMAjN3cMLcQmnzEfDKNLd-Jr6azJElB2_4PYCxj3P8QvqrTSPX7sbw_vwNmtDJftSEtMUPBm-blq0K5_euGZHDslB2bltI5DoU-ezNbrPRouBLU6TA2rzLJtBsOp5GG74aRWco5KYv-4vzvAHEbnSNMQJd-3xVda_mAHuGNqJc2xZFrPAJLdi4UUvWPrIks5NKwNfUhilFpJfRRlTu0" />
-                      <div>
-                        <p className="font-label-md text-slate-900">Benjamin Cooper</p>
-                        <p className="text-xs text-slate-500">ben.cooper@farmmail.com</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-lg py-4">
-                    <p className="text-body-sm text-slate-700">Green Valley Orchards</p>
-                  </td>
-                  <td className="px-lg py-4">
-                    <div className="flex items-center gap-1 text-body-sm text-slate-600">
-                      <span className="material-symbols-outlined text-[16px] text-slate-400" data-icon="location_on">location_on</span>
-                      Oregon, USA
-                    </div>
-                  </td>
-                  <td className="px-lg py-4">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100/50 text-emerald-700 text-xs font-bold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                      Verified
-                    </span>
-                  </td>
-                  <td className="px-lg py-4 text-right">
-                    <button className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-emerald-700 font-bold text-xs hover:bg-emerald-50 transition-colors">
-                      View Profile
-                    </button>
-                  </td>
-                </tr>
-                {/* Row 2 */}
-                <tr className="hover:bg-slate-50/50 transition-colors group">
-                  <td className="px-lg py-4">
-                    <div className="flex items-center gap-3">
-                      <input className="rounded text-emerald-600 focus:ring-emerald-500" type="checkbox" />
-                      <img className="w-10 h-10 rounded-full object-cover" data-alt="close-up of a middle aged female farmer looking into the distance with a field in the background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCiwwQ0j31EP6f-vg_lcpInWlHtHpUO3Y_OEzpxZjTix7Th5IW1LKlROGBgvT1JrtDzsdZVxm6XPEWhCsS75-8owOJjPMdeCEtpEubi-Kd68qnin7-AU8UnjmJJFhRczIMUW5rEarIvqLLObeq8ayvWcAbVaDVR2NZ8rYSjESEO7u4Y73vvdFh4VkEhFOF0RJ_NE-K39ONsdWSoaIZJhYA9jBY2gNxuZ7Qdd4inHT-LyYV53FHNgWvoyNzvE7ata4EhZJTUA98K8j4" />
-                      <div>
-                        <p className="font-label-md text-slate-900">Elena Rodriguez</p>
-                        <p className="text-xs text-slate-500">elena.r@agriflow.co</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-lg py-4">
-                    <p className="text-body-sm text-slate-700">Sun-Drenched Plains</p>
-                  </td>
-                  <td className="px-lg py-4">
-                    <div className="flex items-center gap-1 text-body-sm text-slate-600">
-                      <span className="material-symbols-outlined text-[16px] text-slate-400" data-icon="location_on">location_on</span>
-                      Valencia, Spain
-                    </div>
-                  </td>
-                  <td className="px-lg py-4">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100/50 text-amber-700 text-xs font-bold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span>
-                      Pending
-                    </span>
-                  </td>
-                  <td className="px-lg py-4 text-right">
-                    <button className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-emerald-700 font-bold text-xs hover:bg-emerald-50 transition-colors">
-                      View Profile
-                    </button>
-                  </td>
-                </tr>
-                {/* Row 3 */}
-                <tr className="hover:bg-slate-50/50 transition-colors group">
-                  <td className="px-lg py-4">
-                    <div className="flex items-center gap-3">
-                      <input className="rounded text-emerald-600 focus:ring-emerald-500" type="checkbox" />
-                      <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-                        <span className="material-symbols-outlined" data-icon="person">person</span>
-                      </div>
-                      <div>
-                        <p className="font-label-md text-slate-900">Marcus Thorne</p>
-                        <p className="text-xs text-slate-500">m.thorne@skyfarms.io</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-lg py-4">
-                    <p className="text-body-sm text-slate-700">Highland Cattle Co.</p>
-                  </td>
-                  <td className="px-lg py-4">
-                    <div className="flex items-center gap-1 text-body-sm text-slate-600">
-                      <span className="material-symbols-outlined text-[16px] text-slate-400" data-icon="location_on">location_on</span>
-                      Scotland, UK
-                    </div>
-                  </td>
-                  <td className="px-lg py-4">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100/50 text-emerald-700 text-xs font-bold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                      Verified
-                    </span>
-                  </td>
-                  <td className="px-lg py-4 text-right">
-                    <button className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-emerald-700 font-bold text-xs hover:bg-emerald-50 transition-colors">
-                      View Profile
-                    </button>
-                  </td>
-                </tr>
-                {/* Row 4 */}
-                <tr className="hover:bg-slate-50/50 transition-colors group">
-                  <td className="px-lg py-4">
-                    <div className="flex items-center gap-3">
-                      <input className="rounded text-emerald-600 focus:ring-emerald-500" type="checkbox" />
-                      <img className="w-10 h-10 rounded-full object-cover" data-alt="young male farmer in a modern greenhouse using a tablet to monitor plants with natural sunlight" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDE2ru1If37WKusu5tUeVzjcMDyj3VG3MY5Z74TQxFo2pSaG0JHn4YZ-wb_37YQ1IzgxyuTRNm-xbJCChVyesME7FYNVSm0wJPgB6iLTogYIxSHdquSkL798-_ba-waZb0nZYjSxMuPjiu2ruh4PqLoJPhOWo4b0q37ZMaw7TMDqOSMf52AgoZZK6OyxTGvAEia_k6Y-r58FnwMi16wcVVGc6rOGfxbjaJW0HF3EKA6W9IeQdVctfka42jVYls4tmvjxU-mNFTTKNQ" />
-                      <div>
-                        <p className="font-label-md text-slate-900">Li Wei</p>
-                        <p className="text-xs text-slate-500">liwei@technogrow.com</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-lg py-4">
-                    <p className="text-body-sm text-slate-700">Digital Hydroponics</p>
-                  </td>
-                  <td className="px-lg py-4">
-                    <div className="flex items-center gap-1 text-body-sm text-slate-600">
-                      <span className="material-symbols-outlined text-[16px] text-slate-400" data-icon="location_on">location_on</span>
-                      Suzhou, China
-                    </div>
-                  </td>
-                  <td className="px-lg py-4">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-100/50 text-rose-700 text-xs font-bold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-rose-600"></span>
-                      Rejected
-                    </span>
-                  </td>
-                  <td className="px-lg py-4 text-right">
-                    <button className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-emerald-700 font-bold text-xs hover:bg-emerald-50 transition-colors">
-                      View Profile
-                    </button>
-                  </td>
-                </tr>
-                {/* Row 5 */}
-                <tr className="hover:bg-slate-50/50 transition-colors group">
-                  <td className="px-lg py-4">
-                    <div className="flex items-center gap-3">
-                      <input className="rounded text-emerald-600 focus:ring-emerald-500" type="checkbox" />
-                      <img className="w-10 h-10 rounded-full object-cover" data-alt="a confident african woman farmer standing in a field of sunflowers during sunset with a beautiful golden sky" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC6arzbFWnpa5muTQ42JJSF2S-lijfJaacqNls-QsgyrBaUu2WHfJrGeNZnuf-HOdEIUqnEeREVmM-7oSNbNuHZd-W78YSlOlK6krUalz5ah5ZGh_fDjJ6NSJgWzDzTPaOKW_hJE8rDoNwMUHlznw5UVUm43FBPpdOiE4LTAPXIFCay87zE3kLTV_wNtvnD-M-62g7XDl5V639wta9P9Rf-x1dsvAQBtbjrZi216xB5up2F4ySGch1utsf1BMpbQgKKbW__8LexYIo" />
-                      <div>
-                        <p className="font-label-md text-slate-900">Amara Okafor</p>
-                        <p className="text-xs text-slate-500">amara.o@harvestlink.org</p>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-lg py-4">
-                    <p className="text-body-sm text-slate-700">Sunrise Harvests</p>
-                  </td>
-                  <td className="px-lg py-4">
-                    <div className="flex items-center gap-1 text-body-sm text-slate-600">
-                      <span className="material-symbols-outlined text-[16px] text-slate-400" data-icon="location_on">location_on</span>
-                      Enugu, Nigeria
-                    </div>
-                  </td>
-                  <td className="px-lg py-4">
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100/50 text-emerald-700 text-xs font-bold">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
-                      Verified
-                    </span>
-                  </td>
-                  <td className="px-lg py-4 text-right">
-                    <button className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-emerald-700 font-bold text-xs hover:bg-emerald-50 transition-colors">
-                      View Profile
-                    </button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-
-            {/* Pagination */}
-            <div className="px-lg py-4 flex items-center justify-between bg-slate-50/30">
-              <button className="flex items-center gap-1 text-slate-500 hover:text-emerald-700 transition-colors disabled:opacity-50" disabled>
-                <span className="material-symbols-outlined text-[20px]" data-icon="chevron_left">chevron_left</span>
-                Previous
-              </button>
-              <div className="flex items-center gap-1">
-                <button className="w-8 h-8 flex items-center justify-center rounded bg-primary text-white font-bold text-xs">1</button>
-                <button className="w-8 h-8 flex items-center justify-center rounded text-slate-600 hover:bg-slate-100 font-bold text-xs">2</button>
-                <button className="w-8 h-8 flex items-center justify-center rounded text-slate-600 hover:bg-slate-100 font-bold text-xs">3</button>
-                <span className="px-1 text-slate-400">...</span>
-                <button className="w-8 h-8 flex items-center justify-center rounded text-slate-600 hover:bg-slate-100 font-bold text-xs">284</button>
-              </div>
-              <button className="flex items-center gap-1 text-slate-500 hover:text-emerald-700 transition-colors">
-                Next
-                <span className="material-symbols-outlined text-[20px]" data-icon="chevron_right">chevron_right</span>
-              </button>
+            <div className="overflow-x-auto">
+              {loading ? (
+                <div className="flex items-center justify-center py-16 text-slate-500">
+                  <span className="material-symbols-outlined animate-spin mr-2">
+                    autorenew
+                  </span>
+                  Loading farmers...
+                </div>
+              ) : filteredFarmers.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-slate-500">
+                  <span className="material-symbols-outlined text-4xl mb-3">
+                    agriculture
+                  </span>
+                  <p className="text-sm font-medium">No farmers found</p>
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse">
+                  <thead className="bg-slate-50 border-y border-slate-200">
+                    <tr>
+                      <th className="px-lg py-3 text-[12px] font-bold text-slate-500 uppercase tracking-wider">
+                        Farmer Name
+                      </th>
+                      <th className="px-lg py-3 text-[12px] font-bold text-slate-500 uppercase tracking-wider">
+                        Farm Name
+                      </th>
+                      <th className="px-lg py-3 text-[12px] font-bold text-slate-500 uppercase tracking-wider">
+                        Contact
+                      </th>
+                      <th className="px-lg py-3 text-[12px] font-bold text-slate-500 uppercase tracking-wider">
+                        Verification Status
+                      </th>
+                      <th className="px-lg py-3 text-[12px] font-bold text-slate-500 uppercase tracking-wider">
+                        Account
+                      </th>
+                      <th className="px-lg py-3 text-[12px] font-bold text-slate-500 uppercase tracking-wider text-right">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredFarmers.map((farmer) => (
+                      <tr
+                        key={farmer._id}
+                        className={`hover:bg-slate-50/50 transition-colors group ${isSuspended(farmer) ? "bg-red-50/20" : ""}`}
+                      >
+                        <td className="px-lg py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-bold text-sm">
+                              {farmer.fullName?.charAt(0)?.toUpperCase() || "?"}
+                            </div>
+                            <div>
+                              <p className="font-label-md text-slate-900">
+                                {farmer.fullName}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {farmer.userId?.email || "—"}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-lg py-4">
+                          <p className="text-body-sm text-slate-700">
+                            {farmer.farmName || "—"}
+                          </p>
+                        </td>
+                        <td className="px-lg py-4 text-body-sm text-slate-600">
+                          {farmer.phone || farmer.userId?.phone || "—"}
+                        </td>
+                        <td className="px-lg py-4">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${getStatusBadge(farmer.status)}`}
+                          >
+                            <span
+                              className={`w-1.5 h-1.5 rounded-full ${getStatusDot(farmer.status)}`}
+                            />
+                            {getStatusLabel(farmer.status)}
+                          </span>
+                        </td>
+                        <td className="px-lg py-4">
+                          {isSuspended(farmer) ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-red-100/50 text-red-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-red-600" />
+                              Suspended
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100/50 text-emerald-700">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                              Active
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-lg py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            {isSuspended(farmer) ? (
+                              <button
+                                onClick={() => handleUnsuspend(farmer)}
+                                className="px-3 py-1.5 bg-green-600 text-white rounded-lg font-bold text-xs hover:bg-green-700 transition-colors"
+                              >
+                                Unsuspend
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => openSuspendModal(farmer)}
+                                className="px-3 py-1.5 bg-white border border-amber-200 rounded-lg text-amber-700 font-bold text-xs hover:bg-amber-50 transition-colors"
+                              >
+                                Suspend
+                              </button>
+                            )}
+                            <button
+                              onClick={() => handleDelete(farmer)}
+                              className="px-3 py-1.5 bg-red-600 text-white rounded-lg font-bold text-xs hover:bg-red-700 transition-colors"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
           </div>
         </div>
       </main>
+
+      {/* Suspension Modal */}
+      {showSuspendModal && selectedFarmer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+              <h3 className="text-lg font-bold text-slate-900">
+                Suspend Farmer
+              </h3>
+              <button
+                onClick={() => setShowSuspendModal(false)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div>
+                <p className="text-sm text-gray-600">
+                  <strong>Farmer:</strong> {selectedFarmer.fullName}
+                </p>
+                <p className="text-sm text-gray-600 mt-1">
+                  <strong>Farm:</strong> {selectedFarmer.farmName || "—"}
+                </p>
+              </div>
+
+              {checkingEligibility && (
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <span className="material-symbols-outlined animate-spin text-sm">
+                    autorenew
+                  </span>
+                  Checking eligibility...
+                </div>
+              )}
+
+              {suspensionError && (
+                <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3 flex items-start gap-2">
+                  <span className="material-symbols-outlined text-sm mt-0.5">
+                    error
+                  </span>
+                  {suspensionError}
+                </div>
+              )}
+
+              {canSuspend && !checkingEligibility && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Suspension Reason (Optional)
+                    </label>
+                    <textarea
+                      rows={3}
+                      className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+                      placeholder="e.g., Policy violation, Fraudulent activity..."
+                      value={suspensionReason}
+                      onChange={(e) => setSuspensionReason(e.target.value)}
+                    />
+                  </div>
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3">
+                    <p className="text-sm text-yellow-800">
+                      <strong>⚠️ Warning:</strong> Suspending this farmer will
+                      prevent them from accessing their account and listing
+                      products.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="px-6 py-4 border-t border-gray-200 flex gap-3">
+              <button
+                onClick={() => setShowSuspendModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSuspend}
+                disabled={!canSuspend || suspending || checkingEligibility}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                  !canSuspend || checkingEligibility
+                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                    : "bg-red-600 text-white hover:bg-red-700"
+                } disabled:opacity-60`}
+              >
+                {suspending ? "Suspending..." : "Suspend Farmer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

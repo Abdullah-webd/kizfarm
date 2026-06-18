@@ -9,7 +9,7 @@ export default function UserDetailPage() {
       <aside className="fixed left-0 top-0 h-full w-[280px] border-r border-gray-200 bg-white flex flex-col py-6 px-4 gap-2 z-50">
         <div className="mb-8 px-4">
           <div className="flex items-center gap-3">
-            <img alt="KizFarm Logo" className="h-10 w-auto" src="https://lh3.googleusercontent.com/aida/ADBb0ujvT0foH0KVcUsUv1-X4NT6qkDm-oxoWHPKnV2esAnpEYklq4ts8j8P3_GO0-dXO8ryqMabe9myPDfL0XYeqBDVig2viC4Rij2XdBmivAgOvEtr0hGHDgDKJZ1i38ZtqiD-LoHs4WVWukq8QcifpDJziKXxgrnxclqiEC_kDMK9LVOr0HmGh1xKcZ7krF1tknqWE-DCpzGSaO8Y2JOVQvTR-0-hQxIhA2Oem9ye8FJhDUNqr8nPm5RYcAimG0-7PXqDyqvgpsiJRg" />
+            <img alt="KizFarm Logo" className="h-10 w-auto" src="/logo.jpeg" />
             <span className="text-xl font-black tracking-tight text-emerald-900">KizFarm</span>
           </div>
         </div>

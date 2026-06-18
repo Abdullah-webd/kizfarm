@@ -1,21 +1,170 @@
 "use client"
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { apiFetch } from "@/lib/kizfarm/api";
+
+interface AddressItem {
+  _id: string;
+  label: string;
+  street: string;
+  city: string;
+  state: string;
+  country: string;
+  phone: string;
+  isDefault: boolean;
+}
 
 export default function AddressesPage() {
+  const [addresses, setAddresses] = useState<AddressItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // Modal & Form state
+  const [showModal, setShowModal] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingAddressId, setEditingAddressId] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const [label, setLabel] = useState("Home");
+  const [street, setStreet] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
+  const [country, setCountry] = useState("Nigeria");
+  const [phone, setPhone] = useState("");
+  const [isDefault, setIsDefault] = useState(false);
+
+  const fetchAddresses = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const { res, payload } = await apiFetch("/buyer/addresses");
+      if (!res.ok) {
+        setError(payload?.error || "Failed to fetch addresses");
+        return;
+      }
+      setAddresses(payload.addresses || []);
+    } catch (err) {
+      console.error("Error fetching addresses:", err);
+      setError("Failed to load addresses");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAddresses();
+  }, []);
+
+  const openAddModal = () => {
+    setIsEditing(false);
+    setEditingAddressId(null);
+    setLabel("Home");
+    setStreet("");
+    setCity("");
+    setState("");
+    setCountry("Nigeria");
+    setPhone("");
+    setIsDefault(false);
+    setError(null);
+    setShowModal(true);
+  };
+
+  const openEditModal = (address: AddressItem) => {
+    setIsEditing(true);
+    setEditingAddressId(address._id);
+    setLabel(address.label || "Home");
+    setStreet(address.street || "");
+    setCity(address.city || "");
+    setState(address.state || "");
+    setCountry(address.country || "Nigeria");
+    setPhone(address.phone || "");
+    setIsDefault(address.isDefault || false);
+    setError(null);
+    setShowModal(true);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!street || !city || !state) {
+      setError("Street, City, and State are required fields.");
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setError(null);
+
+      const bodyData = { label, street, city, state, country, phone, isDefault };
+      const endpoint = isEditing ? `/buyer/addresses/${editingAddressId}` : "/buyer/addresses";
+      const method = isEditing ? "PUT" : "POST";
+
+      const { res, payload } = await apiFetch(endpoint, {
+        method,
+        body: JSON.stringify(bodyData)
+      });
+
+      if (!res.ok) {
+        setError(payload?.error || "Failed to save address.");
+        return;
+      }
+
+      setShowModal(false);
+      fetchAddresses();
+    } catch (err) {
+      console.error("Submit address error:", err);
+      setError("Server connection failed.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this address?")) return;
+    try {
+      const { res, payload } = await apiFetch(`/buyer/addresses/${id}`, {
+        method: "DELETE"
+      });
+      if (!res.ok) {
+        alert(payload?.error || "Failed to delete address");
+        return;
+      }
+      fetchAddresses();
+    } catch (err) {
+      console.error("Delete address error:", err);
+      alert("Failed to delete address");
+    }
+  };
+
+  const handleSetDefault = async (id: string) => {
+    try {
+      const { res, payload } = await apiFetch(`/buyer/addresses/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ isDefault: true })
+      });
+      if (!res.ok) {
+        alert(payload?.error || "Failed to set default address");
+        return;
+      }
+      fetchAddresses();
+    } catch (err) {
+      console.error("Set default address error:", err);
+    }
+  };
+
   return (
     <>
       {/* TopAppBar Shell */}
       <header className="bg-white dark:bg-zinc-950 border-b border-gray-200 dark:border-zinc-800 docked full-width top-0 sticky z-50">
-        <div className="flex justify-between items-center w-full px-6 py-3 h-16">
+        <div className="flex justify-between items-center w-full px-6 py-3 h-16 max-w-[1440px] mx-auto">
           <div className="flex items-center gap-3">
-            <span className="material-symbols-outlined text-[#1B6D24]" data-icon="agriculture">agriculture</span>
-            <img alt="KIZ FARM" className="h-8 w-auto" data-alt="minimalist professional logo for a modern agriculture technology brand featuring clean lines and organic shapes" src="https://lh3.googleusercontent.com/aida/ADBb0uj23GL1yyohDEuVyudjCde9xNopFZpHCGNijVRI7_HJybbUQd0SFj0Z-XhpQWQnOfiSkEmJWn9d8fKlJFq0qsc3mZlPIrdE4vjs6GDC6u2ke-vkWWQD5xodJ0YjKCA3slbcuEcGZNXYT7Qq_sSEX2IpzueZh-7FgDLuKZT82snUxkiQCv4D4HmN47B9ejnDhm2YojkfYBHAbmSLAQqdHDhiY56I2jeR3l3jAXenLOwCeQTqfgfBawBRJEC9pIKxysbLNjgbJdsM5g" />
+            <Link href="/buyer/marketplace" className="cursor-pointer flex items-center gap-2">
+              <span className="material-symbols-outlined text-[#1B6D24]" data-icon="agriculture">agriculture</span>
+              <span className="font-inter antialiased text-sm font-medium text-xl font-extrabold tracking-tight text-[#1B6D24] dark:text-green-500">KIZ FARM</span>
+            </Link>
           </div>
           <div className="flex items-center gap-4">
-            <button className="text-gray-500 dark:text-zinc-400 hover:opacity-80 transition-opacity active:scale-95 duration-150">
-              <span className="material-symbols-outlined" data-icon="notifications">notifications</span>
-            </button>
+            <Link href="/buyer/marketplace" className="text-sm font-semibold text-primary hover:underline">Marketplace</Link>
           </div>
         </div>
       </header>
@@ -24,140 +173,248 @@ export default function AddressesPage() {
         <div className="max-w-4xl mx-auto">
           {/* Header Section */}
           <div className="flex flex-col gap-2 mb-xl">
-            <h1 className="font-headline-lg text-headline-lg text-on-surface">Saved Addresses</h1>
+            <h1 className="font-headline-lg text-headline-lg text-on-surface font-extrabold text-2xl">Saved Addresses</h1>
             <p className="font-body-md text-body-md text-secondary">Manage your delivery locations for fresh farm produce deliveries.</p>
           </div>
 
+          {/* Loading state */}
+          {loading && (
+            <div className="flex justify-center items-center py-16">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+            </div>
+          )}
+
+          {/* Error State */}
+          {error && !loading && !showModal && (
+            <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-xl mb-6">
+              <p className="font-semibold">Error</p>
+              <p className="text-sm">{error}</p>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!loading && addresses.length === 0 && (
+            <div className="bg-white border border-[#E5E7EB] rounded-2xl p-12 text-center flex flex-col items-center justify-center min-h-[300px] mb-8">
+              <span className="material-symbols-outlined text-6xl text-gray-300 mb-4">home_pin</span>
+              <h3 className="text-lg font-bold text-on-surface mb-1">No addresses saved</h3>
+              <p className="text-sm text-secondary mb-6">You need to save at least one delivery address to place orders.</p>
+              <button 
+                onClick={openAddModal}
+                className="px-6 py-3 bg-[#1B6D24] text-white rounded-lg font-bold hover:bg-primary transition-colors flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-sm">add_location</span>
+                Add First Address
+              </button>
+            </div>
+          )}
+
           {/* Address Grid/List */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-gutter mb-xl">
-            {/* Primary Address Card */}
-            <div className="bg-white border border-[#E5E7EB] rounded-xl p-6 relative group transition-all duration-200 hover:shadow-[0_10px_30px_rgba(27,109,36,0.05)]">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[#1B6D24]" data-icon="home" style={{ fontVariationSettings: "'FILL' 1" }}>home</span>
-                  <span className="font-label-sm text-label-sm bg-primary-fixed text-on-primary-fixed px-2 py-0.5 rounded-full">Home</span>
-                </div>
-                <div className="flex gap-2">
-                  <button className="p-2 text-outline hover:text-primary transition-colors active:scale-95 duration-150">
-                    <span className="material-symbols-outlined" data-icon="edit">edit</span>
-                  </button>
-                  <button className="p-2 text-outline hover:text-error transition-colors active:scale-95 duration-150">
-                    <span className="material-symbols-outlined" data-icon="delete">delete</span>
-                  </button>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <h3 className="font-headline-md text-headline-md text-[#1B6D24]">Jonathan Aris</h3>
-                <p className="font-body-md text-body-md text-on-surface-variant leading-relaxed">
-                  452 Organic Meadows, Greenhouse District<br />
-                  Nairobi, 00100, Kenya
-                </p>
-                <p className="font-label-sm text-label-sm text-secondary mt-4 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px]" data-icon="call">call</span>
-                  +254 701 234 567
-                </p>
-              </div>
-            </div>
-
-            {/* Office Address Card */}
-            <div className="bg-white border border-[#E5E7EB] rounded-xl p-6 relative group transition-all duration-200 hover:shadow-[0_10px_30px_rgba(27,109,36,0.05)]">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-outline" data-icon="business">business</span>
-                  <span className="font-label-sm text-label-sm text-outline px-2 py-0.5 border border-outline-variant rounded-full">Work</span>
-                </div>
-                <div className="flex gap-2">
-                  <button className="p-2 text-outline hover:text-primary transition-colors active:scale-95 duration-150">
-                    <span className="material-symbols-outlined" data-icon="edit">edit</span>
-                  </button>
-                  <button className="p-2 text-outline hover:text-error transition-colors active:scale-95 duration-150">
-                    <span className="material-symbols-outlined" data-icon="delete">delete</span>
-                  </button>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <h3 className="font-headline-md text-headline-md text-on-surface">Jonathan Aris</h3>
-                <p className="font-body-md text-body-md text-on-surface-variant leading-relaxed">
-                  AgriTech Hub, 3rd Floor, Silicon Savannah<br />
-                  Westlands, Nairobi, Kenya
-                </p>
-                <p className="font-label-sm text-label-sm text-secondary mt-4 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px]" data-icon="call">call</span>
-                  +254 788 990 011
-                </p>
-              </div>
-            </div>
-
-            {/* Farm Address Card (Asymmetric detail) */}
-            <div className="bg-white border border-[#E5E7EB] rounded-xl p-6 relative group transition-all duration-200 hover:shadow-[0_10px_30px_rgba(27,109,36,0.05)] md:col-span-2">
-              <div className="flex flex-col md:flex-row gap-6">
-                <div className="w-full md:w-48 h-32 rounded-lg bg-surface-container-low overflow-hidden relative">
-                  <div className="absolute inset-0 bg-cover bg-center" data-alt="minimalist topographical map showing green vegetation zones and rural roads with soft green and grey tones" data-location="Nairobi" style={{ backgroundImage: "url('https://lh3.googleusercontent.com/aida-public/AB6AXuAU60kn3aHJ_r57rhaEToAekX44tlCUyaXWIwuPrehdKhG0dzyOj_1IgKKrZX-bk7XypgGVt7Fg7mOjj0PDCSBVxduZyBWLdd1WvRgtQlQFjq1nSW_cIJZDm9-fEQ04oiqdWanpefN95B3pZo1Xp_IQ9e8lxu_J7mz4XG-hbncY0UNKwf4q1oFZIWHVg5UfpYlUVpt2rBM3O6Tnh0kWdb4vuq4Css60PyDzdUoWyx1qYvXxzwEb-Wn4cVTOybHiABkIr_MNKCzrp9M')" }}></div>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[#1B6D24] text-4xl" data-icon="location_on" style={{ fontVariationSettings: "'FILL' 1" }}>location_on</span>
-                  </div>
-                </div>
-                <div className="flex-1">
-                  <div className="flex justify-between items-start mb-2">
+          {!loading && addresses.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-gutter mb-xl">
+              {addresses.map((address) => (
+                <div 
+                  key={address._id}
+                  className={`bg-white border rounded-xl p-6 relative group transition-all duration-200 hover:shadow-[0_10px_30px_rgba(27,109,36,0.05)] ${
+                    address.isDefault ? "border-[#1B6D24] ring-2 ring-[#1B6D24]/10" : "border-[#E5E7EB]"
+                  }`}
+                >
+                  <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-outline" data-icon="agriculture">agriculture</span>
-                      <span className="font-label-sm text-label-sm text-outline px-2 py-0.5 border border-outline-variant rounded-full">Farm Site</span>
+                      <span className="material-symbols-outlined text-[#1B6D24]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                        {address.label?.toLowerCase() === "office" ? "business" : "home"}
+                      </span>
+                      <span className="font-label-sm text-label-xs bg-primary-container text-white px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wide">
+                        {address.label || "Home"}
+                      </span>
+                      {address.isDefault && (
+                        <span className="font-label-sm text-label-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full font-bold">
+                          Default
+                        </span>
+                      )}
                     </div>
                     <div className="flex gap-2">
-                      <button className="p-2 text-outline hover:text-primary transition-colors active:scale-95 duration-150">
-                        <span className="material-symbols-outlined" data-icon="edit">edit</span>
+                      {!address.isDefault && (
+                        <button 
+                          onClick={() => handleSetDefault(address._id)}
+                          className="text-xs text-primary font-semibold px-2 py-1 hover:bg-green-50 rounded transition-colors"
+                          title="Set as Default"
+                        >
+                          Set Default
+                        </button>
+                      )}
+                      <button 
+                        onClick={() => openEditModal(address)}
+                        className="p-1.5 text-gray-500 hover:text-primary transition-colors hover:bg-gray-50 rounded"
+                      >
+                        <span className="material-symbols-outlined text-lg" data-icon="edit">edit</span>
                       </button>
-                      <button className="p-2 text-outline hover:text-error transition-colors active:scale-95 duration-150">
-                        <span className="material-symbols-outlined" data-icon="delete">delete</span>
+                      <button 
+                        onClick={() => handleDelete(address._id)}
+                        className="p-1.5 text-gray-500 hover:text-red-500 transition-colors hover:bg-gray-50 rounded"
+                      >
+                        <span className="material-symbols-outlined text-lg" data-icon="delete">delete</span>
                       </button>
                     </div>
                   </div>
-                  <h3 className="font-headline-md text-headline-md text-on-surface">KIZ Main Field A</h3>
-                  <p className="font-body-md text-body-md text-on-surface-variant">Gate 4, Kiambu Rural Road 12, Highlands Region</p>
-                  <p className="font-label-sm text-label-sm text-secondary mt-2 flex items-center gap-2">
-                    <span className="material-symbols-outlined text-[18px]" data-icon="call">call</span>
-                    +254 722 000 111
-                  </p>
+                  <div className="space-y-1">
+                    <p className="font-body-md text-body-md text-on-surface-variant font-medium leading-relaxed">
+                      {address.street}
+                    </p>
+                    <p className="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+                      {address.city}, {address.state}
+                    </p>
+                    <p className="font-body-md text-body-md text-on-surface-variant leading-relaxed">
+                      {address.country}
+                    </p>
+                    {address.phone && (
+                      <p className="font-label-sm text-label-sm text-secondary mt-4 flex items-center gap-2">
+                        <span className="material-symbols-outlined text-[18px]" data-icon="call">call</span>
+                        {address.phone}
+                      </p>
+                    )}
+                  </div>
                 </div>
-              </div>
+              ))}
             </div>
-          </div>
+          )}
 
           {/* Action Button */}
-          <div className="flex flex-col items-center gap-4">
-            <button className="w-full md:w-auto min-w-[320px] h-12 px-8 bg-[#1B6D24] text-white rounded-lg font-label-sm text-label-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-transform active:scale-95 hover:bg-primary duration-200 shadow-md">
-              <span className="material-symbols-outlined" data-icon="add_location">add_location</span>
-              Add New Address
-            </button>
-            <p className="font-label-xs text-label-xs text-outline italic">Maximum 5 addresses per account</p>
-          </div>
+          {!loading && addresses.length > 0 && (
+            <div className="flex flex-col items-center gap-4">
+              <button 
+                onClick={openAddModal}
+                disabled={addresses.length >= 5}
+                className={`w-full md:w-auto min-w-[320px] h-12 px-8 bg-[#1B6D24] text-white rounded-lg font-label-sm text-label-sm uppercase tracking-widest flex items-center justify-center gap-3 transition-transform active:scale-95 duration-200 shadow-md ${
+                  addresses.length >= 5 ? "opacity-50 cursor-not-allowed" : "hover:bg-primary"
+                }`}
+              >
+                <span className="material-symbols-outlined" data-icon="add_location">add_location</span>
+                Add New Address
+              </button>
+              <p className="font-label-xs text-label-xs text-outline italic">
+                {addresses.length >= 5 ? "Maximum address limit reached (5)" : "Maximum 5 addresses per account"}
+              </p>
+            </div>
+          )}
         </div>
       </main>
 
-      {/* BottomNavBar Shell */}
-      <nav className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center bg-white dark:bg-zinc-950 h-20 pb-safe border-t border-gray-100 dark:border-zinc-800 shadow-[0_-10px_30px_rgba(27,109,36,0.05)] md:hidden">
-        <a className="flex flex-col items-center justify-center text-gray-400 dark:text-zinc-500 p-2 hover:text-[#1B6D24] transition-colors active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined" data-icon="home">home</span>
-          <span className="font-inter text-[10px] font-semibold uppercase tracking-wider">Home</span>
-        </a>
-        <a className="flex flex-col items-center justify-center text-gray-400 dark:text-zinc-500 p-2 hover:text-[#1B6D24] transition-colors active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined" data-icon="storefront">storefront</span>
-          <span className="font-inter text-[10px] font-semibold uppercase tracking-wider">Market</span>
-        </a>
-        <a className="flex flex-col items-center justify-center text-gray-400 dark:text-zinc-500 p-2 hover:text-[#1B6D24] transition-colors active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined" data-icon="shopping_bag">shopping_bag</span>
-          <span className="font-inter text-[10px] font-semibold uppercase tracking-wider">Orders</span>
-        </a>
-        <a className="flex flex-col items-center justify-center text-[#1B6D24] dark:text-green-500 p-2 transition-colors active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined" data-icon="person" style={{ fontVariationSettings: "'FILL' 1" }}>person</span>
-          <span className="font-inter text-[10px] font-semibold uppercase tracking-wider">Profile</span>
-        </a>
-      </nav>
+      {/* Edit/Add Overlay Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 max-w-lg w-full rounded-2xl p-6 shadow-2xl border border-gray-100 dark:border-gray-800">
+            <h3 className="text-xl font-bold text-on-surface mb-4 flex items-center gap-2">
+              <span className="material-symbols-outlined text-[#1B6D24]">home_pin</span>
+              {isEditing ? "Edit Delivery Address" : "Add Delivery Address"}
+            </h3>
 
-      {/* FAB for quick addition (Responsive variant) */}
-      <button className="fixed bottom-24 right-6 w-14 h-14 bg-[#1B6D24] text-white rounded-full flex items-center justify-center shadow-lg md:hidden active:scale-90 transition-transform">
-        <span className="material-symbols-outlined" data-icon="add">add</span>
-      </button>
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-lg mb-4 text-xs font-semibold">
+                {error}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Label (e.g. Home, Office)</label>
+                  <input 
+                    type="text" 
+                    value={label}
+                    onChange={(e) => setLabel(e.target.value)}
+                    className="w-full h-11 border border-gray-200 rounded-lg px-3 focus:outline-none focus:border-primary bg-white text-black"
+                    placeholder="Home"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Phone Number</label>
+                  <input 
+                    type="text" 
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    className="w-full h-11 border border-gray-200 rounded-lg px-3 focus:outline-none focus:border-primary bg-white text-black"
+                    placeholder="+234 80 1234 5678"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Street Address</label>
+                <input 
+                  type="text" 
+                  value={street}
+                  onChange={(e) => setStreet(e.target.value)}
+                  className="w-full h-11 border border-gray-200 rounded-lg px-3 focus:outline-none focus:border-primary bg-white text-black"
+                  placeholder="42 Greenfield Avenue"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">City</label>
+                  <input 
+                    type="text" 
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    className="w-full h-11 border border-gray-200 rounded-lg px-3 focus:outline-none focus:border-primary bg-white text-black"
+                    placeholder="Ikeja"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">State</label>
+                  <input 
+                    type="text" 
+                    value={state}
+                    onChange={(e) => setState(e.target.value)}
+                    className="w-full h-11 border border-gray-200 rounded-lg px-3 focus:outline-none focus:border-primary bg-white text-black"
+                    placeholder="Lagos"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Country</label>
+                  <input 
+                    type="text" 
+                    value={country}
+                    onChange={(e) => setCountry(e.target.value)}
+                    className="w-full h-11 border border-gray-200 rounded-lg px-3 focus:outline-none focus:border-primary bg-white text-black"
+                    placeholder="Nigeria"
+                  />
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 cursor-pointer py-2">
+                <input 
+                  type="checkbox" 
+                  checked={isDefault}
+                  onChange={(e) => setIsDefault(e.target.checked)}
+                  className="h-4 w-4 text-primary focus:ring-primary border-gray-300 rounded"
+                />
+                <span className="text-sm font-semibold text-gray-700">Set as default shipping address</span>
+              </label>
+
+              <div className="flex gap-3 justify-end pt-4 border-t border-gray-100">
+                <button 
+                  type="button" 
+                  onClick={() => setShowModal(false)}
+                  className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-lg font-semibold hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={submitting}
+                  className="px-5 py-2.5 bg-[#1B6D24] text-white rounded-lg font-semibold hover:bg-primary disabled:opacity-50"
+                >
+                  {submitting ? "Saving..." : "Save Address"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

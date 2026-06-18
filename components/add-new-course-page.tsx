@@ -11,7 +11,7 @@ export default function AddNewCoursePage() {
           <button className="md:hidden p-base">
             <span className="material-symbols-outlined text-green-800">menu</span>
           </button>
-          <img alt="KizFarm logo" className="h-8 w-auto" data-alt="The official KizFarm logo, representing agricultural excellence and innovation." src="https://lh3.googleusercontent.com/aida/ADBb0ugzYC4-jqxSvxpO-z71bb0GLSnz_-daStJIDb_rNawDmL25axyIiZy8Cqf1UcXvoLZLDeXjPhmjvdKjTxAlrjvjl3HXCUWXUj5nkd-CNJRdE5q0cUnyPeJSBDqfwKp2LBqoAXSOr9rxTHYeYdNtnu7qp_P10cfeet2EPbyN482EHqLb_yukw7jI8RArrUC1lZTB-VHlTnuP22hg4JuRelxxtVa1Qgw4ltrQRNHgV0L1G3laFJ7TF4ZomEhxJ1EQNPEyGr6vd4TvKw" />
+          <img alt="KizFarm logo" className="h-8 w-auto" data-alt="The official KizFarm logo, representing agricultural excellence and innovation." src="/logo.jpeg" />
         </div>
         <div className="flex items-center gap-md">
           <span className="material-symbols-outlined text-slate-500 hover:text-green-800 cursor-pointer">notifications</span>

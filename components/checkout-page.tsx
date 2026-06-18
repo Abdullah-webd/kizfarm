@@ -1,20 +1,207 @@
 "use client"
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useCart } from "@/lib/kizfarm/cart-context";
+import { apiFetch } from "@/lib/kizfarm/api";
+
+interface AddressItem {
+  _id: string;
+  label: string;
+  street: string;
+  city: string;
+  state: string;
+  country: string;
+  phone: string;
+  isDefault: boolean;
+}
 
 export default function CheckoutPage() {
+  const router = useRouter();
+  const { items, totalPrice, clearCart } = useCart();
+
+  const [addresses, setAddresses] = useState<AddressItem[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>("");
+  const [loadingAddresses, setLoadingAddresses] = useState(true);
+  const [placingOrder, setPlacingOrder] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState<string>("");
+
+  const [paymentMethod, setPaymentMethod] = useState<string>("card");
+
+  // Fetch saved addresses and profile to get user's email
+  useEffect(() => {
+    const fetchAddressesAndProfile = async () => {
+      try {
+        setLoadingAddresses(true);
+        const [addrRes, profileRes] = await Promise.all([
+          apiFetch("/buyer/addresses"),
+          apiFetch("/buyer/profile")
+        ]);
+
+        if (addrRes.res.ok && addrRes.payload.addresses) {
+          const list = addrRes.payload.addresses;
+          setAddresses(list);
+          if (list.length > 0) {
+            const defaultAddress = list.find((a: AddressItem) => a.isDefault) || list[0];
+            setSelectedAddressId(defaultAddress._id);
+          }
+        }
+
+        if (profileRes.res.ok && profileRes.payload.profile) {
+          setEmail(profileRes.payload.profile.email);
+        }
+      } catch (err) {
+        console.error("Error loading checkout details:", err);
+      } finally {
+        setLoadingAddresses(false);
+      }
+    };
+    fetchAddressesAndProfile();
+  }, []);
+
+  // Calculate pricing
+  const uniqueFarmers = Array.from(new Set(items.map(item => item.farmerId || 'unknown')));
+  const deliveryFee = items.length > 0 ? uniqueFarmers.length * 1500 : 0;
+  const serviceCharge = items.length > 0 ? 1200 : 0;
+  const total = totalPrice + deliveryFee + serviceCharge;
+
+  // Load Paystack Inline JS
+  const loadPaystackScript = () => {
+    return new Promise((resolve) => {
+      if ((window as any).PaystackPop) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://js.paystack.co/v1/inline.js";
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  const handlePlaceOrder = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    if (items.length === 0) {
+      setError("Your cart is empty.");
+      return;
+    }
+
+    if (!selectedAddressId) {
+      setError("Please select a shipping address.");
+      return;
+    }
+
+    const scriptLoaded = await loadPaystackScript();
+    if (!scriptLoaded) {
+      setError("Failed to load payment gateway. Please check your internet connection.");
+      return;
+    }
+
+    setPlacingOrder(true);
+
+    try {
+      const paystackPublicKey = process.env.NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY || "pk_test_4815a51356e4576307137f8d75e8db5ce8eb473f";
+
+      const handler = (window as any).PaystackPop.setup({
+        key: paystackPublicKey,
+        email: email || "customer@kizfarm.com",
+        amount: Math.round(total * 100), // in kobo
+        currency: "NGN",
+        metadata: {
+          brand: "KIZ FARM",
+          custom_fields: [
+            {
+              display_name: "Merchant",
+              variable_name: "merchant",
+              value: "KIZ FARM",
+            },
+          ],
+        },
+        callback: function (response: any) {
+          const paymentRef = response.reference;
+
+          const orderPayload = {
+            items: items.map(i => ({ productId: i.productId, quantity: i.quantity })),
+            addressId: selectedAddressId,
+            paymentMethod: paymentMethod === "card" ? "card" : paymentMethod === "bank" ? "bank_transfer" : "mobile_money",
+            paymentReference: paymentRef,
+          };
+
+          apiFetch("/buyer/orders", {
+            method: "POST",
+            body: JSON.stringify(orderPayload),
+          }).then(({ res, payload }) => {
+            if (!res.ok) {
+              setError(payload?.error || "Payment succeeded, but order creation failed. Please contact support with reference: " + paymentRef);
+              setPlacingOrder(false);
+              return;
+            }
+
+            clearCart();
+            router.push("/buyer/orders");
+          }).catch(err => {
+            console.error("Order creation error after Paystack success:", err);
+            setError("Payment succeeded, but connection failed. Contact support with reference: " + paymentRef);
+            setPlacingOrder(false);
+          });
+        },
+        onClose: function () {
+          setPlacingOrder(false);
+          setError("Payment was cancelled.");
+        },
+      });
+
+      handler.openIframe();
+    } catch (err) {
+      console.error("Paystack initialization error:", err);
+      setError("Failed to initialize payment gateway. Please try again.");
+      setPlacingOrder(false);
+    }
+  };
+
   return (
     <>
       {/* Header / TopAppBar */}
       <header className="bg-white dark:bg-slate-950 border-b border-gray-200 dark:border-gray-800 flex justify-between items-center px-6 h-16 w-full max-w-[1440px] mx-auto sticky top-0 z-50">
         <div className="flex items-center gap-3">
-          <img alt="KIZ FARM Logo" className="h-10 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/ADBb0uj23GL1yyohDEuVyudjCde9xNopFZpHCGNijVRI7_HJybbUQd0SFj0Z-XhpQWQnOfiSkEmJWn9d8fKlJFq0qsc3mZlPIrdE4vjs6GDC6u2ke-vkWWQD5xodJ0YjKCA3slbcuEcGZNXYT7Qq_sSEX2IpzueZh-7FgDLuKZT82snUxkiQCv4D4HmN47B9ejnDhm2YojkfYBHAbmSLAQqdHDhiY56I2jeR3l3jAXenLOwCeQTqfgfBawBRJEC9pIKxysbLNjgbJdsM5g" />
+          <Link href="/buyer/marketplace">
+            <img alt="KIZ FARM Logo" className="h-10 w-auto object-contain cursor-pointer" src="/logo.jpeg" />
+          </Link>
         </div>
         <div className="flex items-center gap-4">
           <span className="material-symbols-outlined text-gray-500">lock</span>
           <span className="font-label-sm text-label-sm text-gray-500 uppercase tracking-widest">Secure Checkout</span>
         </div>
       </header>
+
+      {/* Address Validation Gate Overlay */}
+      {!loadingAddresses && addresses.length === 0 && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 max-w-md w-full rounded-2xl p-6 shadow-2xl border border-gray-100 dark:border-gray-800 text-center">
+            <span className="material-symbols-outlined text-6xl text-amber-500 mb-4">home_pin</span>
+            <h3 className="text-xl font-bold text-on-surface mb-2">Delivery Address Required</h3>
+            <p className="text-sm text-secondary mb-6 leading-relaxed">
+              You must have at least one saved delivery address in your profile to checkout. 
+              Please add an address first.
+            </p>
+            <div className="flex flex-col gap-3">
+              <Link href="/buyer/addresses" className="block w-full">
+                <button className="w-full py-3 bg-[#1B6D24] text-white rounded-lg font-bold hover:bg-primary transition-colors">
+                  Add Delivery Address
+                </button>
+              </Link>
+              <Link href="/buyer/cart" className="block w-full text-center text-sm text-secondary hover:underline">
+                Return to Cart
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main className="max-w-[1440px] mx-auto px-margin mt-lg">
         <div className="flex flex-col lg:grid lg:grid-cols-12 gap-gutter">
@@ -27,18 +214,28 @@ export default function CheckoutPage() {
                 <span className="font-label-sm text-label-sm text-primary">Address</span>
               </div>
               <div className="h-[2px] flex-1 bg-primary-container/20 mx-4">
-                <div className="h-full bg-primary-container w-1/2"></div>
+                <div className="h-full bg-primary-container w-full"></div>
               </div>
               <div className="flex flex-col items-center gap-2">
-                <div className="w-10 h-10 rounded-full bg-white border-2 border-primary-container text-primary-container flex items-center justify-center font-bold">2</div>
-                <span className="font-label-sm text-label-sm text-primary-container font-semibold">Payment</span>
+                <div className="w-10 h-10 rounded-full bg-primary-container text-white flex items-center justify-center font-bold">2</div>
+                <span className="font-label-sm text-label-sm text-primary font-semibold">Payment</span>
               </div>
-              <div className="h-[2px] flex-1 bg-gray-200 mx-4"></div>
+              <div className="h-[2px] flex-1 bg-primary-container/20 mx-4">
+                <div className="h-full bg-primary-container w-full"></div>
+              </div>
               <div className="flex flex-col items-center gap-2">
-                <div className="w-10 h-10 rounded-full bg-white border-2 border-gray-200 text-gray-400 flex items-center justify-center font-bold">3</div>
-                <span className="font-label-sm text-label-sm text-gray-400">Review</span>
+                <div className="w-10 h-10 rounded-full bg-primary-container text-white flex items-center justify-center font-bold">3</div>
+                <span className="font-label-sm text-label-sm text-primary">Review</span>
               </div>
             </nav>
+
+            {/* Error Message */}
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl p-4 flex items-center gap-2">
+                <span className="material-symbols-outlined text-red-500">error</span>
+                <span className="text-sm font-semibold">{error}</span>
+              </div>
+            )}
 
             {/* Section: Address Selection */}
             <section className="bg-white rounded-xl border border-[#E5E7EB] p-md">
@@ -47,36 +244,54 @@ export default function CheckoutPage() {
                   <span className="material-symbols-outlined text-primary">local_shipping</span>
                   Shipping Address
                 </h2>
-                <button className="text-primary font-label-sm text-label-sm hover:underline">+ Add New</button>
+                <Link href="/buyer/addresses">
+                  <span className="text-primary font-label-sm text-label-sm hover:underline cursor-pointer">+ Manage Addresses</span>
+                </Link>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-base">
-                {/* Address Card 1 */}
-                <label className="relative flex p-md border-2 border-primary-container bg-primary/5 rounded-xl cursor-pointer">
-                  <input defaultChecked className="absolute top-4 right-4 text-primary focus:ring-primary h-4 w-4" name="address" type="radio" />
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="material-symbols-outlined text-primary" style={{ fontVariationSettings: "'FILL' 1" }}>home</span>
-                      <span className="font-label-sm text-label-sm font-bold uppercase tracking-wider">Home Address</span>
-                    </div>
-                    <p className="font-body-md text-body-md text-on-surface-variant">42 Agronomy Lane, Greenfield Estates</p>
-                    <p className="font-body-md text-body-md text-on-surface-variant">Nairobi, Kenya 00100</p>
-                    <p className="mt-2 font-label-xs text-label-xs text-gray-500">+254 712 345 678</p>
-                  </div>
-                </label>
-                {/* Address Card 2 */}
-                <label className="relative flex p-md border border-[#E5E7EB] hover:border-primary/30 rounded-xl cursor-pointer transition-all">
-                  <input className="absolute top-4 right-4 text-primary focus:ring-primary h-4 w-4" name="address" type="radio" />
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="material-symbols-outlined text-secondary">business</span>
-                      <span className="font-label-sm text-label-sm font-bold uppercase tracking-wider">Office Address</span>
-                    </div>
-                    <p className="font-body-md text-body-md text-on-surface-variant">Tech Hub Plaza, 4th Floor, Kilimani</p>
-                    <p className="font-body-md text-body-md text-on-surface-variant">Nairobi, Kenya 00200</p>
-                    <p className="mt-2 font-label-xs text-label-xs text-gray-500">+254 798 765 432</p>
-                  </div>
-                </label>
-              </div>
+
+              {loadingAddresses ? (
+                <div className="flex items-center justify-center py-6">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-base">
+                  {addresses.map((address) => (
+                    <label 
+                      key={address._id}
+                      className={`relative flex p-md border-2 rounded-xl cursor-pointer transition-all ${
+                        selectedAddressId === address._id 
+                          ? "border-primary-container bg-primary/5" 
+                          : "border-[#E5E7EB] hover:border-primary/30"
+                      }`}
+                    >
+                      <input 
+                        type="radio" 
+                        name="address" 
+                        value={address._id}
+                        checked={selectedAddressId === address._id}
+                        onChange={() => setSelectedAddressId(address._id)}
+                        className="absolute top-4 right-4 text-primary focus:ring-primary h-4 w-4" 
+                      />
+                      <div className="flex flex-col pr-6">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`material-symbols-outlined ${selectedAddressId === address._id ? "text-primary" : "text-secondary"}`} style={{ fontVariationSettings: "'FILL' 1" }}>
+                            {address.label?.toLowerCase() === "office" ? "business" : "home"}
+                          </span>
+                          <span className="font-label-sm text-label-sm font-bold uppercase tracking-wider">
+                            {address.label || "Address"} {address.isDefault && "(Default)"}
+                          </span>
+                        </div>
+                        <p className="font-body-md text-body-md text-on-surface-variant leading-tight">{address.street}</p>
+                        <p className="font-body-md text-body-md text-on-surface-variant leading-tight">{address.city}, {address.state}</p>
+                        <p className="font-body-md text-body-md text-on-surface-variant leading-tight">{address.country}</p>
+                        {address.phone && (
+                          <p className="mt-2 font-label-xs text-label-xs text-gray-500">{address.phone}</p>
+                        )}
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              )}
             </section>
 
             {/* Section: Payment Method */}
@@ -87,52 +302,80 @@ export default function CheckoutPage() {
               </h2>
               <div className="space-y-base">
                 {/* Option: Card */}
-                <div className="border border-[#E5E7EB] rounded-xl p-md">
+                <div className={`border rounded-xl p-md transition-all ${paymentMethod === "card" ? "border-primary bg-primary/5" : "border-[#E5E7EB]"}`}>
                   <div className="flex items-center justify-between mb-md">
-                    <div className="flex items-center gap-4">
+                    <label className="flex items-center gap-4 cursor-pointer" onClick={() => setPaymentMethod("card")}>
+                      <input 
+                        type="radio" 
+                        name="payment_method" 
+                        checked={paymentMethod === "card"}
+                        onChange={() => setPaymentMethod("card")}
+                        className="text-primary focus:ring-primary h-4 w-4" 
+                      />
                       <span className="material-symbols-outlined text-primary">credit_card</span>
                       <span className="font-body-md text-body-md font-semibold">Credit / Debit Card</span>
-                    </div>
+                    </label>
                     <div className="flex gap-2">
                       <img alt="Visa" className="h-4" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD-RsglwsNPJXX73IDwIdQ3HHRuxBh_1XbfDe37VlY-hYlEIQ-bqUL3dPkwdRKIljsqZm9DRrSfojmLcoHNeMj-QCiPeagPjjVewcLjw0X0xsoPzIycqSJp3awK3PohQeShlQSa7KydGKlnsLoDsDiB6U3LLo5e0RzeIZ2UXJLZ2yPKLu-J1ZrI0CsViyXLZcd52FqFAiBhY_wy9VjGt_apM-1wgbIS67XOUw9mfDF5w_NSEifFkvRswqOHHVa1AcaPHF-BJs8K5H4" />
                       <img alt="Mastercard" className="h-4" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDkuSVgKnfSjdSUQhzCb_xOF05-EKPt81CZU4qgCxV845GnamHkdNdRtu78LF9bOBto2glzTPFzCD4zFGr8QbAJw90ZkoNbC3RvUx8O2oZYMMqc4bb_eiQ5C5J5mNBIoOAiQYbmm58z1LUOcYWJN5kWkAa7Z6B02TxxPSgLSOrLC3efCgfhfIsXOaA6mRl0CejF9c4fLOtz8Pt1u0-xoU26cLq3R8b63-GGozQ6uIquPzzUPa5BnpPwktl_9RIixJnikNIBHqcCVro" />
                     </div>
                   </div>
-                  <div className="space-y-md">
-                    <div className="grid grid-cols-1 gap-base">
-                      <label className="block font-label-xs text-label-xs text-gray-500 uppercase">Card Number</label>
-                      <div className="relative">
-                        <input className="w-full h-12 border-[#D1D5DB] border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary px-md font-body-md" placeholder="xxxx xxxx xxxx xxxx" type="text" />
-                        <span className="absolute right-4 top-3 material-symbols-outlined text-gray-400">lock</span>
-                      </div>
+                  {paymentMethod === "card" && (
+                    <div className="space-y-xs mt-4 p-md rounded-lg bg-green-50/50 border border-green-100 text-sm text-slate-700">
+                      <p className="font-semibold text-green-900 mb-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-sm">shield</span> Secured via Paystack
+                      </p>
+                      <p className="text-xs text-slate-500">You will pay securely using your credit or debit card via Paystack's official popup interface.</p>
                     </div>
-                    <div className="grid grid-cols-2 gap-md">
-                      <div className="space-y-base">
-                        <label className="block font-label-xs text-label-xs text-gray-500 uppercase">Expiry Date</label>
-                        <input className="w-full h-12 border-[#D1D5DB] border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary px-md font-body-md" placeholder="MM/YY" type="text" />
-                      </div>
-                      <div className="space-y-base">
-                        <label className="block font-label-xs text-label-xs text-gray-500 uppercase">CVV</label>
-                        <input className="w-full h-12 border-[#D1D5DB] border rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary px-md font-body-md" placeholder="***" type="password" />
-                      </div>
-                    </div>
-                  </div>
+                  )}
                 </div>
                 {/* Option: Bank Transfer */}
-                <div className="border border-[#E5E7EB] rounded-xl p-md flex items-center justify-between opacity-60">
-                  <div className="flex items-center gap-4">
-                    <span className="material-symbols-outlined text-gray-500">account_balance</span>
-                    <span className="font-body-md text-body-md font-semibold text-gray-500">Direct Bank Transfer</span>
-                  </div>
-                  <span className="material-symbols-outlined text-gray-300">radio_button_unchecked</span>
+                <div className={`border rounded-xl p-md transition-all ${paymentMethod === "bank" ? "border-primary bg-primary/5" : "border-[#E5E7EB]"}`}>
+                  <label className="flex items-center justify-between cursor-pointer" onClick={() => setPaymentMethod("bank")}>
+                    <div className="flex items-center gap-4">
+                      <input 
+                        type="radio" 
+                        name="payment_method" 
+                        checked={paymentMethod === "bank"}
+                        onChange={() => setPaymentMethod("bank")}
+                        className="text-primary focus:ring-primary h-4 w-4" 
+                      />
+                      <span className="material-symbols-outlined text-gray-500">account_balance</span>
+                      <span className="font-body-md text-body-md font-semibold text-gray-700">Direct Bank Transfer / USSD</span>
+                    </div>
+                  </label>
+                  {paymentMethod === "bank" && (
+                    <div className="space-y-xs mt-4 p-md rounded-lg bg-green-50/50 border border-green-100 text-sm text-slate-700">
+                      <p className="font-semibold text-green-900 mb-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-sm">shield</span> Secured via Paystack
+                      </p>
+                      <p className="text-xs text-slate-500">You will pay securely using direct bank transfer or USSD code via the Paystack popup.</p>
+                    </div>
+                  )}
                 </div>
-                {/* Option: M-Pesa */}
-                <div className="border border-[#E5E7EB] rounded-xl p-md flex items-center justify-between opacity-60">
-                  <div className="flex items-center gap-4">
-                    <span className="material-symbols-outlined text-gray-500">smartphone</span>
-                    <span className="font-body-md text-body-md font-semibold text-gray-500">M-Pesa Mobile Money</span>
-                  </div>
-                  <span className="material-symbols-outlined text-gray-300">radio_button_unchecked</span>
+                {/* Option: Mobile Money */}
+                <div className={`border rounded-xl p-md transition-all ${paymentMethod === "mobile_money" ? "border-primary bg-primary/5" : "border-[#E5E7EB]"}`}>
+                  <label className="flex items-center justify-between cursor-pointer" onClick={() => setPaymentMethod("mobile_money")}>
+                    <div className="flex items-center gap-4">
+                      <input 
+                        type="radio" 
+                        name="payment_method" 
+                        checked={paymentMethod === "mobile_money"}
+                        onChange={() => setPaymentMethod("mobile_money")}
+                        className="text-primary focus:ring-primary h-4 w-4" 
+                      />
+                      <span className="material-symbols-outlined text-gray-500">smartphone</span>
+                      <span className="font-body-md text-body-md font-semibold text-gray-700">Mobile Money / OPAY / M-Pesa</span>
+                    </div>
+                  </label>
+                  {paymentMethod === "mobile_money" && (
+                    <div className="space-y-xs mt-4 p-md rounded-lg bg-green-50/50 border border-green-100 text-sm text-slate-700">
+                      <p className="font-semibold text-green-900 mb-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-sm">shield</span> Secured via Paystack
+                      </p>
+                      <p className="text-xs text-slate-500">You will pay securely using OPAY, M-Pesa or other mobile money methods via the Paystack popup.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </section>
@@ -146,51 +389,55 @@ export default function CheckoutPage() {
                   <h3 className="font-headline-md text-headline-md text-on-surface">Order Summary</h3>
                 </div>
                 {/* Mini Product List */}
-                <div className="p-md space-y-md">
-                  <div className="flex gap-4">
-                    <div className="w-20 h-20 bg-gray-100 rounded-lg flex-shrink-0 overflow-hidden">
-                      <img className="w-full h-full object-cover" data-alt="Close up of fresh organic bright green kale leaves with water droplets and vibrant texture" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAMdG6CQYMJuGcGM8xjuBUZYI39hwXD1-SWLMCeKI4TBmmEUkPaSphhNZQDBLQRPjVTB0zOW9KkknyKsw7_IlVMfYS1AAsrJ7wQRJGI0RVTMUoqQ6r3ESFV5S1gZfMXIGGxilT1JR8C9ZF12etkBlwIudo6cQAIbj6r4fADivJlBt5jQNbrYQ08UDAw4tDXqi4iZkZzEPRahpIQpLeFjdS3ylQU8p_aotpWr_iRWij5zEyQQOdjnw93QrZurpx9K6coEWkFyW_Ar4g" />
+                <div className="p-md space-y-md max-h-[300px] overflow-y-auto">
+                  {items.map((item) => (
+                    <div key={item.productId} className="flex gap-4">
+                      <div className="w-16 h-16 bg-gray-100 rounded-lg flex-shrink-0 overflow-hidden">
+                        <img 
+                          className="w-full h-full object-cover" 
+                          alt={item.name} 
+                          src={item.image || "https://via.placeholder.com/150?text=No+Image"} 
+                        />
+                      </div>
+                      <div className="flex-1">
+                        <h4 className="font-label-sm text-label-sm font-bold text-on-surface line-clamp-1">{item.name}</h4>
+                        <p className="font-label-xs text-label-xs text-gray-500">Qty: {item.quantity}</p>
+                        <p className="font-body-md text-body-md font-semibold text-primary mt-1">₦ {(item.price * item.quantity).toLocaleString()}</p>
+                      </div>
                     </div>
-                    <div className="flex-1">
-                      <h4 className="font-label-sm text-label-sm font-bold text-on-surface">Organic Lacinato Kale</h4>
-                      <p className="font-label-xs text-label-xs text-gray-500">Qty: 2 Bunches</p>
-                      <p className="font-body-md text-body-md font-semibold text-primary mt-1">$12.50</p>
-                    </div>
-                  </div>
-                  <div className="flex gap-4">
-                    <div className="w-20 h-20 bg-gray-100 rounded-lg flex-shrink-0 overflow-hidden">
-                      <img className="w-full h-full object-cover" data-alt="Artisanal glass jar of pure golden honey sitting on a rustic wooden table with honeycomb" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDwRI4p1ysyO4zoWAfRw-Ft8xN3lfslGZQk3hVRVjNmlNm5X3HXaacbTfZ1BAoTMCNGw6CDXuPHBbd19PXt0gL3L8S1GpzVEQyx6B1A3NrEXf4FPxQhTtCL51D_B5h18ez6uIcV48wRjIcMAzTqYu5q97dHXzRMo79Hw870lupSSMf3FRThzUQTs61ILxHdvz1GngyHFRX6uaEua1sG6of8S6G9AlHHs57XN79rD1oPeNZz8B21UDntOjqH09--ntCnaC6UGMVFuoI" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="font-label-sm text-label-sm font-bold text-on-surface">Wildflower Raw Honey</h4>
-                      <p className="font-label-xs text-label-xs text-gray-500">Qty: 1 Jar (500g)</p>
-                      <p className="font-body-md text-body-md font-semibold text-primary mt-1">$18.00</p>
-                    </div>
-                  </div>
+                  ))}
                 </div>
                 {/* Price Calculations */}
                 <div className="p-md space-y-base border-t border-[#E5E7EB]">
                   <div className="flex justify-between font-body-md text-body-md text-on-surface-variant">
                     <span>Subtotal</span>
-                    <span>$30.50</span>
+                    <span>₦ {totalPrice.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between font-body-md text-body-md text-on-surface-variant">
-                    <span>Shipping (Express)</span>
-                    <span>$5.00</span>
+                    <span>Shipping Fee</span>
+                    <span>₦ {deliveryFee.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between font-body-md text-body-md text-on-surface-variant">
-                    <span>Est. Taxes</span>
-                    <span>$2.45</span>
+                    <span>Service Charge</span>
+                    <span>₦ {serviceCharge.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between font-headline-md text-headline-md text-on-surface pt-md border-t border-[#E5E7EB]">
                     <span>Total</span>
-                    <span>$37.95</span>
+                    <span className="text-[#1B6D24] font-bold">₦ {total.toLocaleString()}</span>
                   </div>
                 </div>
                 <div className="p-md">
-                  <button className="w-full h-12 bg-primary text-white font-label-sm text-label-sm font-bold uppercase tracking-widest rounded-lg flex items-center justify-center gap-2 active:scale-95 duration-150 shadow-lg shadow-primary/20 hover:bg-primary-container">
+                  <button 
+                    onClick={handlePlaceOrder}
+                    disabled={placingOrder || items.length === 0 || !selectedAddressId}
+                    className={`w-full h-12 bg-[#1B6D24] text-white font-label-sm text-label-sm font-bold uppercase tracking-widest rounded-lg flex items-center justify-center gap-2 active:scale-95 duration-150 shadow-lg shadow-[#1B6D24]/20 ${
+                      placingOrder || items.length === 0 || !selectedAddressId 
+                        ? "opacity-50 cursor-not-allowed" 
+                        : "hover:bg-[#15521B]"
+                    }`}
+                  >
                     <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>verified_user</span>
-                    Place Order Securely
+                    {placingOrder ? "Placing Order..." : "Place Order Securely"}
                   </button>
                   <p className="text-center font-label-xs text-label-xs text-gray-400 mt-4 flex items-center justify-center gap-1">
                     <span className="material-symbols-outlined text-xs">shield</span>
@@ -199,13 +446,13 @@ export default function CheckoutPage() {
                 </div>
               </div>
               {/* Map/Delivery Status Card */}
-              <div className="bg-primary/5 rounded-xl border border-primary/10 p-md flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-primary">bolt</span>
+              <div className="bg-green-50/10 rounded-xl border border-green-100 p-md flex items-center gap-4">
+                <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center">
+                  <span className="material-symbols-outlined text-[#1B6D24]">bolt</span>
                 </div>
                 <div>
-                  <p className="font-label-sm text-label-sm font-bold text-primary">Farm-to-Door Delivery</p>
-                  <p className="font-label-xs text-label-xs text-primary/70">Estimated: Tomorrow by 10:00 AM</p>
+                  <p className="font-label-sm text-label-sm font-bold text-[#1B6D24]">Farm-to-Door Delivery</p>
+                  <p className="font-label-xs text-label-xs text-slate-500">Estimated: Tomorrow by 10:00 AM</p>
                 </div>
               </div>
             </aside>
@@ -215,22 +462,22 @@ export default function CheckoutPage() {
 
       {/* Bottom Navigation (Mobile Only Shell) */}
       <nav className="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 px-2 bg-white/80 backdrop-blur-md border-t border-gray-200">
-        <div className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 px-4 py-1">
+        <Link href="/buyer/marketplace" className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 px-4 py-1">
           <span className="material-symbols-outlined">home</span>
           <span className="font-label-xs text-label-xs">Home</span>
-        </div>
-        <div className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 px-4 py-1">
+        </Link>
+        <Link href="/buyer/marketplace" className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 px-4 py-1">
           <span className="material-symbols-outlined">storefront</span>
           <span className="font-label-xs text-label-xs">Market</span>
-        </div>
-        <div className="flex flex-col items-center justify-center text-[#1B6D24] bg-green-50 dark:bg-green-900/20 rounded-xl px-4 py-1">
+        </Link>
+        <Link href="/buyer/orders" className="flex flex-col items-center justify-center text-[#1B6D24] bg-green-50 dark:bg-green-900/20 rounded-xl px-4 py-1">
           <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>receipt_long</span>
           <span className="font-label-xs text-label-xs">Orders</span>
-        </div>
-        <div className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 px-4 py-1">
+        </Link>
+        <Link href="/buyer/profile" className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 px-4 py-1">
           <span className="material-symbols-outlined">person</span>
           <span className="font-label-xs text-label-xs">Profile</span>
-        </div>
+        </Link>
       </nav>
 
       {/* Separation Padding for Bottom Nav */}

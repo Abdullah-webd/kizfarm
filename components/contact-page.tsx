@@ -1,43 +1,11 @@
-'use client';
+"use client";
+
+import TopNav from "@/components/top-nav";
 
 export default function ContactPage() {
   return (
     <>
-      {/* TopAppBar */}
-      <header className="fixed top-0 w-full z-50 border-b bg-white backdrop-blur-md border-slate-100 dark:border-slate-800 shadow-sm">
-        <div className="max-w-[1280px] mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <img
-              alt="KIZ FARM Logo"
-              className="h-10 w-auto object-contain"
-              src="/logo.jpeg"
-            />
-          </div>
-          <nav className="hidden md:flex gap-8 items-center">
-            <a
-              className="font-sans antialiased text-sm font-medium tracking-tight text-slate-600 dark:text-slate-400 hover:text-primary transition-colors"
-              href="#"
-            >
-              Products
-            </a>
-            <a
-              className="font-sans antialiased text-sm font-medium tracking-tight text-slate-600 dark:text-slate-400 hover:text-primary transition-colors"
-              href="#"
-            >
-              Farmers
-            </a>
-            <a
-              className="font-sans antialiased text-sm font-medium tracking-tight text-primary font-bold border-b-2 border-primary pb-1"
-              href="#"
-            >
-              Contact
-            </a>
-          </nav>
-          <button className="bg-primary text-on-primary px-6 py-2 rounded-md font-label-md active:scale-95 duration-200 transition-all">
-            Login
-          </button>
-        </div>
-      </header>
+      <TopNav />
 
       <main className="pt-32 pb-xl bg-white">
         <div className="max-w-[1280px] mx-auto px-6">
@@ -46,7 +14,9 @@ export default function ContactPage() {
               Cultivate a Connection
             </h1>
             <p className="font-body-lg text-body-lg text-on-surface-variant max-w-2xl">
-              Have questions about our sustainable farming practices or looking for precision agricultural systems? Our team is ready to assist you in the field.
+              Have questions about our sustainable farming practices or looking
+              for precision agricultural systems? Our team is ready to assist
+              you in the field.
             </p>
           </div>
 
@@ -216,7 +186,9 @@ export default function ContactPage() {
                     >
                       near_me
                     </span>
-                    <span className="font-label-md text-primary">FIND US ON THE MAP</span>
+                    <span className="font-label-md text-primary">
+                      FIND US ON THE MAP
+                    </span>
                   </div>
                 </div>
               </div>

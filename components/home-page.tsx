@@ -1,8 +1,102 @@
-'use client';
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import TopNav from "@/components/top-nav";
+import { apiFetch } from "@/lib/kizfarm/api";
+
+interface Product {
+  _id: string;
+  name: string;
+  description?: string;
+  price: number;
+  unit?: string;
+  category?: string;
+  images?: string[];
+  farmerId?: { farmName?: string; location?: string };
+}
+
+const money = (value = 0) => `NGN ${Number(value).toLocaleString()}`;
+
+
 
 export default function HomePage() {
+  const [loggedIn, setLoggedIn] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [products, setProducts] = useState<Product[]>([]);
+  const router = useRouter();
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const token = localStorage.getItem("kizfarm_token");
+    const user = localStorage.getItem("kizfarm_user");
+    if (token) {
+      let role = "user";
+      if (user) {
+        try {
+          const parsed = JSON.parse(user);
+          if (parsed.role) role = parsed.role;
+        } catch {}
+      }
+      if (role === "farmer") {
+        router.push("/farmer/dashboard");
+      } else if (role === "admin") {
+        router.push("/admin/dashboard");
+      } else {
+        router.push("/buyer/dashboard");
+      }
+      return;
+    }
+    setLoggedIn(false);
+    setUserEmail(null);
+
+    const onAuth = () => {
+      const t = localStorage.getItem("kizfarm_token");
+      const u = localStorage.getItem("kizfarm_user");
+      setLoggedIn(!!t);
+      try {
+        setUserEmail(u ? JSON.parse(u).email : null);
+      } catch {
+        setUserEmail(null);
+      }
+    };
+    window.addEventListener("storage", onAuth);
+    window.addEventListener("kizfarm_auth_changed", onAuth as EventListener);
+    return () => {
+      window.removeEventListener("storage", onAuth);
+      window.removeEventListener(
+        "kizfarm_auth_changed",
+        onAuth as EventListener,
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    async function loadProducts() {
+      try {
+        const { payload } = await apiFetch("/marketplace/products");
+        if (payload?.ok) setProducts((payload.products ?? []).slice(0, 4));
+      } catch {
+        setProducts([]);
+      }
+    }
+    loadProducts();
+  }, []);
+
+  const handleLogout = () => {
+    localStorage.removeItem("kizfarm_token");
+    localStorage.removeItem("kizfarm_user");
+    try {
+      window.dispatchEvent(new Event("kizfarm_auth_changed"));
+    } catch {}
+    setLoggedIn(false);
+    router.push("/public/home");
+  };
+
   return (
     <main className="pt-16">
+      <TopNav />
       {/* Hero Section */}
       <section className="relative overflow-hidden bg-[#FFFFFF] py-20 md:py-32">
         <div className="max-w-[1280px] mx-auto px-6 grid grid-cols-1 md:grid-cols-2 items-center gap-12 lg:gap-20">
@@ -14,15 +108,31 @@ export default function HomePage() {
               Fresh Produce Delivered Safely From Farm to Home
             </h1>
             <p className="text-body-lg text-on-surface-variant mb-10 max-w-lg leading-relaxed text-lg">
-              Connecting farmers and buyers with fast delivery and reliable tracking. Experience the taste of precision-grown agriculture.
+              Connecting farmers and buyers with fast delivery and reliable
+              tracking. Experience the taste of precision-grown agriculture.
             </p>
             <div className="flex flex-col sm:flex-row gap-4">
-              <button className="px-8 py-4 bg-[#1B6D24] text-white font-bold text-sm rounded-xl hover:brightness-110 transition-all active:scale-95 soil-shadow">
+              <Link
+                href="/buyer/marketplace"
+                className="px-8 py-4 bg-[#1B6D24] text-white font-bold text-sm rounded-xl hover:brightness-110 transition-all active:scale-95 soil-shadow inline-block text-center"
+              >
                 Shop Products
-              </button>
-              <button className="px-8 py-4 border-2 border-[#1B6D24] text-[#1B6D24] font-bold text-sm rounded-xl hover:bg-[#a2f4b5]/20 transition-all active:scale-95">
-                Become a Farmer
-              </button>
+              </Link>
+              {!loggedIn ? (
+                <Link
+                  href="/public/signup"
+                  className="px-8 py-4 border-2 border-[#1B6D24] text-[#1B6D24] font-bold text-sm rounded-xl hover:bg-[#a2f4b5]/20 transition-all active:scale-95 inline-block text-center"
+                >
+                  Sign Up
+                </Link>
+              ) : (
+                <Link
+                  href="/farmer/become"
+                  className="px-8 py-4 border-2 border-[#1B6D24] text-[#1B6D24] font-bold text-sm rounded-xl hover:bg-[#a2f4b5]/20 transition-all active:scale-95 inline-block text-center"
+                >
+                  Become a Farmer
+                </Link>
+              )}
             </div>
           </div>
           <div className="relative order-1 md:order-2">
@@ -36,10 +146,16 @@ export default function HomePage() {
             </div>
             <div className="absolute -bottom-6 -left-6 bg-white p-6 rounded-xl soil-shadow max-w-[200px]">
               <div className="flex items-center gap-3 mb-2">
-                <span className="material-symbols-outlined text-[#1B6D24]">verified</span>
-                <span className="font-bold text-sm text-on-surface">100% Organic</span>
+                <span className="material-symbols-outlined text-[#1B6D24]">
+                  verified
+                </span>
+                <span className="font-bold text-sm text-on-surface">
+                  100% Organic
+                </span>
               </div>
-              <p className="text-xs text-on-surface-variant">Directly sourced from certified local family farms.</p>
+              <p className="text-xs text-on-surface-variant">
+                Directly sourced from certified local family farms.
+              </p>
             </div>
           </div>
         </div>
@@ -50,109 +166,46 @@ export default function HomePage() {
         <div className="max-w-[1280px] mx-auto px-6">
           <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
             <div>
-              <h2 className="text-headline-lg font-bold text-on-surface mb-2 text-3xl">Featured Harvests</h2>
-              <p className="text-body-md text-on-surface-variant">Picked at peak ripeness and ready for your kitchen.</p>
+              <h2 className="text-headline-lg font-bold text-on-surface mb-2 text-3xl">
+                Featured Harvests
+              </h2>
+              <p className="text-body-md text-on-surface-variant">
+                Picked at peak ripeness and ready for your kitchen.
+              </p>
             </div>
-            <a className="text-[#1B6D24] font-bold flex items-center gap-2 hover:underline" href="#">
-              View All Products <span className="material-symbols-outlined">arrow_forward</span>
-            </a>
+            <Link
+              className="text-[#1B6D24] font-bold flex items-center gap-2 hover:underline"
+              href="/buyer/marketplace"
+            >
+              View All Products{" "}
+              <span className="material-symbols-outlined">arrow_forward</span>
+            </Link>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
-            {/* Product Card 1 */}
-            <div className="group border border-slate-100 rounded-xl overflow-hidden hover:border-[#1B6D24] transition-all duration-300">
-              <div className="h-64 overflow-hidden">
-                <img
-                  alt="Fresh Tomatoes"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuC3vRzD_et4mgd8BnWK2wjxTFSr8tB6M7SEnMhrD7Y9KYG8NkXQ-PIoh4U_jBxQc9od6mNoksEgFGD3hMwKXH83X6So-C6NRmU92hyF7B90T3L6U_G1VdXxbaikAS6PO_KlYMIbTCWyvfy0wd1xOUMQbap9jcomPeqveOKj-oeItUjbkIBpJQgkVZhkCYVpVGKK-oCQEUESW8zeomyjkWK3JWOs7opH3Pa9TBXsJ2GLcgc5p3LBbLxvDl1o7QrniybRXe9o6C93g30"
-                />
-              </div>
-              <div className="p-6">
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="text-lg font-bold text-on-surface">Organic Vine Tomatoes</h3>
-                  <span className="text-[#1B6D24] font-bold">$4.50</span>
+            {products.map((product) => (
+              <Link key={product._id} href={`/buyer/marketplace-detail/${product._id}`} className="group border border-slate-100 rounded-xl overflow-hidden hover:border-[#1B6D24] transition-all duration-300">
+                <div className="h-64 overflow-hidden">
+                  <img alt={product.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" src={product.images?.[0] || "/placeholder.jpg"} />
                 </div>
-                <div className="flex items-center gap-1 mb-4">
-                  <span className="material-symbols-outlined text-orange-400 text-sm">star</span>
-                  <span className="text-xs font-bold text-on-surface-variant">4.9 (120 reviews)</span>
+                <div className="p-6">
+                  <div className="flex justify-between items-start gap-3 mb-2">
+                    <h3 className="text-lg font-bold text-on-surface line-clamp-2">{product.name}</h3>
+                    <span className="text-[#1B6D24] font-bold whitespace-nowrap">{money(product.price)}</span>
+                  </div>
+                  <p className="text-xs font-bold text-on-surface-variant mb-4 line-clamp-1">
+                    {product.farmerId?.farmName || product.category || "Farm product"}{product.unit ? ` · ${product.unit}` : ""}
+                  </p>
+                  <span className="block w-full py-2 rounded-lg bg-slate-50 text-[#1B6D24] font-bold text-sm text-center group-hover:bg-[#1B6D24] group-hover:text-white transition-colors">
+                    View Product
+                  </span>
                 </div>
-                <button className="w-full py-2 rounded-lg bg-slate-50 text-[#1B6D24] font-bold text-sm hover:bg-[#1B6D24] hover:text-white transition-colors">
-                  Add to Cart
-                </button>
+              </Link>
+            ))}
+            {products.length === 0 && (
+              <div className="lg:col-span-4 rounded-xl border border-dashed border-slate-200 p-10 text-center text-sm text-slate-500">
+                No products available yet.
               </div>
-            </div>
-
-            {/* Product Card 2 */}
-            <div className="group border border-slate-100 rounded-xl overflow-hidden hover:border-[#1B6D24] transition-all duration-300">
-              <div className="h-64 overflow-hidden">
-                <img
-                  alt="Fresh Kale"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuChIlwlMSu9bzsHxbHxd3kqIZXt75T60UAkeYq31O2f51Ou9pG13r1uPjcWs_VEbHRcu-jBdx0zXCgiG0vkNvQKwnLrCtumjwuwLIavs5UzCGpYQ5ixz6BvIb_ic5ZWPE8jukbCMwysv22ELEbQmiTjTluZgNFgXgkYF6uoGH2MgyF67nVXiJxNtNuaqeFLGGi0caZxju5kkICL2dHHZ7rQNeJVdit5CsY0gyHKDfpkbS5t34WaR8Fq1fYX6PNr83qLK5JYetWMmpk"
-                />
-              </div>
-              <div className="p-6">
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="text-lg font-bold text-on-surface">High-Density Kale</h3>
-                  <span className="text-[#1B6D24] font-bold">$3.20</span>
-                </div>
-                <div className="flex items-center gap-1 mb-4">
-                  <span className="material-symbols-outlined text-orange-400 text-sm">star</span>
-                  <span className="text-xs font-bold text-on-surface-variant">4.8 (85 reviews)</span>
-                </div>
-                <button className="w-full py-2 rounded-lg bg-slate-50 text-[#1B6D24] font-bold text-sm hover:bg-[#1B6D24] hover:text-white transition-colors">
-                  Add to Cart
-                </button>
-              </div>
-            </div>
-
-            {/* Product Card 3 */}
-            <div className="group border border-slate-100 rounded-xl overflow-hidden hover:border-[#1B6D24] transition-all duration-300">
-              <div className="h-64 overflow-hidden">
-                <img
-                  alt="Organic Carrots"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuDElqyxFo_P9kB6NpsJVwZpZx-dlHPsEX8oH8YRl2lZUBbLa044sLW_DcUpsHVBguaE5QD1avJATsRXIt96VYX3RfuhQHogJoKqWqRiTqo9zXgaRf4WutU_vpgxUBRW9fRiyRt9bjcwlr-PRPGu8oEE8vHVB3D6Y27kbqHQEiwSOZs6L5wW0VE-Lh0lli497HJhS_ZLCFn9l9zhfolmgFakUXjykNZ0Rd_VBFkMksV2Ts4Sh9xEPSKAOuIHzJlb1FSmKcA0SC4-7ek"
-                />
-              </div>
-              <div className="p-6">
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="text-lg font-bold text-on-surface">Sweet Heritage Carrots</h3>
-                  <span className="text-[#1B6D24] font-bold">$2.80</span>
-                </div>
-                <div className="flex items-center gap-1 mb-4">
-                  <span className="material-symbols-outlined text-orange-400 text-sm">star</span>
-                  <span className="text-xs font-bold text-on-surface-variant">5.0 (42 reviews)</span>
-                </div>
-                <button className="w-full py-2 rounded-lg bg-slate-50 text-[#1B6D24] font-bold text-sm hover:bg-[#1B6D24] hover:text-white transition-colors">
-                  Add to Cart
-                </button>
-              </div>
-            </div>
-
-            {/* Product Card 4 */}
-            <div className="group border border-slate-100 rounded-xl overflow-hidden hover:border-[#1B6D24] transition-all duration-300">
-              <div className="h-64 overflow-hidden">
-                <img
-                  alt="Fresh Bell Peppers"
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                  src="https://lh3.googleusercontent.com/aida-public/AB6AXuDodvBO3rLtVfjJz5JoKFZvR70QQztoMKVYulsoVwxqDX9rtlN_FlGE6ViBfryEIA1atrqv8cfM8tA7lg6KxzBi9upX5BW0_fks9R_yaSuLS51hT4veDSEKs-QFLRU5YQ3oDDzO0K7wR4zD1wJQ3_ZlPS3xhWVbXv2HO1IajIraS4XthUfRJw6gkphLTjl1Ki1BUMZIKJQFd-xk1397oksRLs8aJdcrm3VQLR-GgQOxDnCv3wJl1IdomSvktNR3ISGuWfkfN3wwfhg"
-                />
-              </div>
-              <div className="p-6">
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="text-lg font-bold text-on-surface">Mixed Bell Peppers</h3>
-                  <span className="text-[#1B6D24] font-bold">$5.10</span>
-                </div>
-                <div className="flex items-center gap-1 mb-4">
-                  <span className="material-symbols-outlined text-orange-400 text-sm">star</span>
-                  <span className="text-xs font-bold text-on-surface-variant">4.7 (96 reviews)</span>
-                </div>
-                <button className="w-full py-2 rounded-lg bg-slate-50 text-[#1B6D24] font-bold text-sm hover:bg-[#1B6D24] hover:text-white transition-colors">
-                  Add to Cart
-                </button>
-              </div>
-            </div>
+            )}
           </div>
         </div>
       </section>
@@ -162,33 +215,59 @@ export default function HomePage() {
         <div className="max-w-[1280px] mx-auto px-6">
           <div className="bg-[#1B6D24] rounded-[2rem] overflow-hidden flex flex-col lg:flex-row items-stretch">
             <div className="p-6 md:p-20 flex-1 flex flex-col justify-center text-white">
-              <h2 className="text-5xl font-bold mb-6 leading-tight">Empower Your Farm with Global Technology.</h2>
+              <h2 className="text-5xl font-bold mb-6 leading-tight">
+                Empower Your Farm with Global Technology.
+              </h2>
               <p className="text-lg text-white/80 mb-10">
-                Join over 5,000 farmers who use KIZ FARM to reach direct buyers, optimize their harvest schedules, and ensure fair pricing for their hard work.
+                Join over 5,000 farmers who use KIZ FARM to reach direct buyers,
+                optimize their harvest schedules, and ensure fair pricing for
+                their hard work.
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-8 mb-10">
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-[#a2f4b5]">monitoring</span>
+                    <span className="material-symbols-outlined text-[#a2f4b5]">
+                      monitoring
+                    </span>
                   </div>
                   <div>
-                    <h4 className="font-bold text-lg mb-1">Advanced Analytics</h4>
-                    <p className="text-sm opacity-80">Track soil health and crop progress in real-time.</p>
+                    <h4 className="font-bold text-lg mb-1">
+                      Advanced Analytics
+                    </h4>
+                    <p className="text-sm opacity-80">
+                      Track soil health and crop progress in real-time.
+                    </p>
                   </div>
                 </div>
                 <div className="flex items-start gap-4">
                   <div className="w-12 h-12 rounded-full bg-white/10 flex items-center justify-center shrink-0">
-                    <span className="material-symbols-outlined text-[#a2f4b5]">payments</span>
+                    <span className="material-symbols-outlined text-[#a2f4b5]">
+                      payments
+                    </span>
                   </div>
                   <div>
                     <h4 className="font-bold text-lg mb-1">Fast Payments</h4>
-                    <p className="text-sm opacity-80">Get paid instantly upon delivery confirmation.</p>
+                    <p className="text-sm opacity-80">
+                      Get paid instantly upon delivery confirmation.
+                    </p>
                   </div>
                 </div>
               </div>
-              <button className="w-fit px-10 py-5 bg-white text-[#1B6D24] font-black text-lg rounded-xl hover:bg-slate-100 transition-all active:scale-95">
-                Apply to Become a Farmer
-              </button>
+              {!loggedIn ? (
+                <Link
+                  href="/public/signup"
+                  className="w-fit inline-block px-10 py-5 bg-white text-[#1B6D24] font-black text-lg rounded-xl hover:bg-slate-100 transition-all active:scale-95"
+                >
+                  Sign Up
+                </Link>
+              ) : (
+                <Link
+                  href="/farmer/become"
+                  className="w-fit inline-block px-10 py-5 bg-white text-[#1B6D24] font-black text-lg rounded-xl hover:bg-slate-100 transition-all active:scale-95"
+                >
+                  Apply to Become a Farmer
+                </Link>
+              )}
             </div>
             <div className="hidden lg:block lg:w-1/3 min-h-[600px] relative">
               <img
@@ -208,19 +287,27 @@ export default function HomePage() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
             <div className="text-center p-8 bg-slate-50 rounded-2xl">
               <p className="text-5xl font-bold text-[#1B6D24] mb-2">12M+</p>
-              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Kilos Delivered</p>
+              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">
+                Kilos Delivered
+              </p>
             </div>
             <div className="text-center p-8 bg-slate-50 rounded-2xl">
               <p className="text-5xl font-bold text-[#1B6D24] mb-2">500+</p>
-              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Active Farms</p>
+              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">
+                Active Farms
+              </p>
             </div>
             <div className="text-center p-8 bg-slate-50 rounded-2xl">
               <p className="text-5xl font-bold text-[#1B6D24] mb-2">24h</p>
-              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Delivery Promise</p>
+              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">
+                Delivery Promise
+              </p>
             </div>
             <div className="text-center p-8 bg-slate-50 rounded-2xl">
               <p className="text-5xl font-bold text-[#1B6D24] mb-2">99.9%</p>
-              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">Quality Rating</p>
+              <p className="text-xs font-bold text-on-surface-variant uppercase tracking-widest">
+                Quality Rating
+              </p>
             </div>
           </div>
         </div>

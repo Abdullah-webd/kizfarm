@@ -31,7 +31,7 @@ export default function AllSubscriptionsPage() {
       {/* SideNavBar */}
       <aside className="flex flex-col w-[280px] h-screen fixed left-0 top-0 z-40 pt-6 px-4 bg-white border-r border-gray-200 hidden md:flex">
         <div className="flex items-center gap-3 px-4 mb-10">
-          <img alt="AgriMarket Admin Logo" className="h-10 w-10 object-contain" data-alt="The official Kiz Farm logo featuring a stylized green leaf integrated with a modern circuit board pattern, symbolizing the intersection of agriculture and technology. The logo uses a deep forest green color scheme and is presented on a clean, white minimalist background. The design is sharp, professional, and reflects high-tech farming solutions." src="https://lh3.googleusercontent.com/aida/ADBb0ugzYC4-jqxSvxpO-z71bb0GLSnz_-daStJIDb_rNawDmL25axyIiZy8Cqf1UcXvoLZLDeXjPhmjvdKjTxAlrjvjl3HXCUWXUj5nkd-CNJRdE5q0cUnyPeJSBDqfwKp2LBqoAXSOr9rxTHYeYdNtnu7qp_P10cfeet2EPbyN482EHqLb_yukw7jI8RArrUC1lZTB-VHlTnuP22hg4JuRelxxtVa1Qgw4ltrQRNHgV0L1G3laFJ7TF4ZomEhxJ1EQNPEyGr6vd4TvKw" />
+          <img alt="AgriMarket Admin Logo" className="h-10 w-10 object-contain" data-alt="The official Kiz Farm logo featuring a stylized green leaf integrated with a modern circuit board pattern, symbolizing the intersection of agriculture and technology. The logo uses a deep forest green color scheme and is presented on a clean, white minimalist background. The design is sharp, professional, and reflects high-tech farming solutions." src="/logo.jpeg" />
           <div>
             <h1 className="text-xl font-bold tracking-tight text-green-900 leading-tight">KizFarm</h1>
             <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Admin Management</p>
@@ -68,7 +68,7 @@ export default function AllSubscriptionsPage() {
       {/* Mobile Header */}
       <header className="md:hidden flex items-center justify-between px-6 h-16 bg-white border-b border-gray-100 sticky top-0 z-50">
         <div className="flex items-center gap-2">
-          <img alt="Kiz Farm Logo" className="h-8 w-8" data-alt="A professional Kiz Farm logo with forest green accents and high-tech agricultural symbolism, set against a clean white background for maximum visibility and brand clarity." src="https://lh3.googleusercontent.com/aida/ADBb0ugzYC4-jqxSvxpO-z71bb0GLSnz_-daStJIDb_rNawDmL25axyIiZy8Cqf1UcXvoLZLDeXjPhmjvdKjTxAlrjvjl3HXCUWXUj5nkd-CNJRdE5q0cUnyPeJSBDqfwKp2LBqoAXSOr9rxTHYeYdNtnu7qp_P10cfeet2EPbyN482EHqLb_yukw7jI8RArrUC1lZTB-VHlTnuP22hg4JuRelxxtVa1Qgw4ltrQRNHgV0L1G3laFJ7TF4ZomEhxJ1EQNPEyGr6vd4TvKw" />
+          <img alt="Kiz Farm Logo" className="h-8 w-8" data-alt="A professional Kiz Farm logo with forest green accents and high-tech agricultural symbolism, set against a clean white background for maximum visibility and brand clarity." src="/logo.jpeg" />
           <span className="text-h3 font-h3 text-primary">KizFarm</span>
         </div>
         <button className="w-10 h-10 flex items-center justify-center rounded-full bg-slate-50">

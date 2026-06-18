@@ -8,7 +8,7 @@ export default function AssignDriverPage() {
       {/* SideNavBar Shell */}
       <aside className="flex flex-col w-[280px] h-screen fixed left-0 top-0 z-40 pt-6 px-4 bg-white border-r border-gray-200">
         <div className="mb-10 px-4">
-          <img alt="KizFarm Logo" className="h-12 w-auto mb-2" src="https://lh3.googleusercontent.com/aida/ADBb0ujvT0foH0KVcUsUv1-X4NT6qkDm-oxoWHPKnV2esAnpEYklq4ts8j8P3_GO0-dXO8ryqMabe9myPDfL0XYeqBDVig2viC4Rij2XdBmivAgOvEtr0hGHDgDKJZ1i38ZtqiD-LoHs4WVWukq8QcifpDJziKXxgrnxclqiEC_kDMK9LVOr0HmGh1xKcZ7krF1tknqWE-DCpzGSaO8Y2JOVQvTR-0-hQxIhA2Oem9ye8FJhDUNqr8nPm5RYcAimG0-7PXqDyqvgpsiJRg" />
+          <img alt="KizFarm Logo" className="h-12 w-auto mb-2" src="/logo.jpeg" />
           <p className="text-xs text-slate-500 font-medium">KizFarm Admin</p>
         </div>
         <nav className="space-y-1">

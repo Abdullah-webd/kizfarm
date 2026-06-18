@@ -1,13 +1,26 @@
-'use client';
+"use client";
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 export default function OtpPage() {
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
+  const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const router = useRouter();
+  const search = useSearchParams();
+  const pendingEmail =
+    typeof window !== "undefined"
+      ? localStorage.getItem("kizfarm_pending_email") || search?.get("email")
+      : null;
+  const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+  const [error, setError] = useState<string | null>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [isResending, setIsResending] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const cooldownRef = useRef<number | null>(null);
 
   const handleOtpChange = (index: number, value: string) => {
-    const numericValue = value.replace(/[^0-9]/g, '').slice(0, 1);
+    const numericValue = value.replace(/[^0-9]/g, "").slice(0, 1);
 
     const newOtp = [...otp];
     newOtp[index] = numericValue;
@@ -20,17 +33,75 @@ export default function OtpPage() {
 
   const handleKeyDown = (
     index: number,
-    e: React.KeyboardEvent<HTMLInputElement>
+    e: React.KeyboardEvent<HTMLInputElement>,
   ) => {
-    if (e.key === 'Backspace' && !otp[index] && index > 0) {
+    if (e.key === "Backspace" && !otp[index] && index > 0) {
       inputRefs.current[index - 1]?.focus();
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const otpCode = otp.join('');
-    console.log('OTP submitted:', otpCode);
+    setError(null);
+    setIsVerifying(true);
+    const otpCode = otp.join("");
+    if (!pendingEmail) return setError("No pending email to verify");
+    try {
+      const res = await fetch(`${API}/auth/verify-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: pendingEmail, code: otpCode }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "OTP verification failed");
+      // on success, clear pending and go to login
+      localStorage.removeItem("kizfarm_pending_email");
+      router.push("/public/login");
+    } catch (err: any) {
+      setError(err.message || "OTP verification failed");
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  // redirect away if already authenticated
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const token = localStorage.getItem('kizfarm_token');
+    if (token) router.push('/public/home');
+  }, [router]);
+
+  const handleResend = async () => {
+    if (!pendingEmail) return setError("No pending email to resend to");
+    if (resendCooldown > 0 || isResending) return;
+    setIsResending(true);
+    try {
+      const res = await fetch(`${API}/auth/resend-otp`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: pendingEmail }),
+      });
+      if (!res.ok) throw new Error("Resend failed");
+      // start cooldown
+      setResendCooldown(30);
+      cooldownRef.current = window.setInterval(() => {
+        setResendCooldown((s) => {
+          if (s <= 1) {
+            if (cooldownRef.current) {
+              clearInterval(cooldownRef.current);
+              cooldownRef.current = null;
+            }
+            return 0;
+          }
+          return s - 1;
+        });
+      }, 1000) as unknown as number;
+    } catch (err) {
+      console.error(err);
+      setError("Failed to resend code");
+    } finally {
+      setIsResending(false);
+    }
   };
 
   return (
@@ -55,7 +126,7 @@ export default function OtpPage() {
             <img
               alt="KIZ FARM"
               className="h-12 w-auto object-contain"
-              src="https://lh3.googleusercontent.com/aida/ADBb0ujvT0foH0KVcUsUv1-X4NT6qkDm-oxoWHPKnV2esAnpEYklq4ts8j8P3_GO0-dXO8ryqMabe9myPDfL0XYeqBDVig2viC4Rij2XdBmivAgOvEtr0hGHDgDKJZ1i38ZtqiD-LoHs4WVWukq8QcifpDJziKXxgrnxclqiEC_kDMK9LVOr0HmGh1xKcZ7krF1tknqWE-DCpzGSaO8Y2JOVQvTR-0-hQxIhA2Oem9ye8FJhDUNqr8nPm5RYcAimG0-7PXqDyqvgpsiJRg"
+              src="/logo.jpeg"
             />
           </div>
 
@@ -91,27 +162,31 @@ export default function OtpPage() {
                   type="text"
                   value={digit}
                   onChange={(e) => handleOtpChange(index, e.target.value)}
+                  disabled={isVerifying}
                   onKeyDown={(e) => handleKeyDown(index, e)}
                 />
               ))}
             </div>
 
             <button
-              className="w-full h-12 bg-primary text-on-primary font-label-sm rounded-lg hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+              className="w-full h-12 bg-primary text-on-primary font-label-sm rounded-lg hover:opacity-90 active:scale-[0.98] transition-all flex items-center justify-center gap-2 disabled:opacity-60"
               type="submit"
+              disabled={isVerifying}
             >
-              Verify &amp; Continue
+              {isVerifying ? "Verifying..." : "Verify & Continue"}
             </button>
 
             <div className="text-center">
               <p className="font-label-sm text-on-secondary-container">
-                Didn&apos;t receive the code?{' '}
-                <a
-                  className="text-primary font-bold hover:underline"
-                  href="#"
+                Didn&apos;t receive the code?{" "}
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={isResending || resendCooldown > 0}
+                  className="text-primary font-bold hover:underline disabled:opacity-60"
                 >
-                  Resend Code
-                </a>
+                  {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : isResending ? "Resending..." : "Resend Code"}
+                </button>
               </p>
             </div>
           </form>

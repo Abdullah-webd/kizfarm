@@ -1,318 +1,1135 @@
-"use client"
+"use client";
 
-import React from 'react';
+import React, { useCallback, useEffect, useState } from "react";
+import { apiFetch } from "@/lib/kizfarm/api";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface OrderItem {
+  productId: string;
+  name: string;
+  price: number;
+  quantity: number;
+  unit?: string;
+  image?: string;
+}
+
+interface Driver {
+  _id: string;
+  name: string;
+  phone: string;
+  vehicleType: string;
+  currentLocation: string | null;
+  status: "active" | "busy" | "offline";
+  activeOrdersCount?: number;
+  averageRating?: number;
+}
+
+interface Order {
+  _id: string;
+  buyerId: { _id: string; name: string; email: string; phone: string } | null;
+  farmerId: {
+    _id: string;
+    farmName: string;
+    location?: string;
+    phone?: string;
+  } | null;
+  driverId: Driver | null;
+  items: OrderItem[];
+  subtotal: number;
+  deliveryFee: number;
+  total: number;
+  paymentMethod: string;
+  paymentReference: string | null;
+  paymentStatus: string;
+  deliveryAddress: {
+    label?: string;
+    street?: string;
+    city?: string;
+    state?: string;
+    phone?: string;
+  };
+  status: string;
+  adminNotes: string | null;
+  farmerNotes: string | null;
+  confirmedAt: string | null;
+  packedAt: string | null;
+  assignedAt: string | null;
+  pickedUpAt: string | null;
+  deliveredAt: string | null;
+  receiptConfirmedAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+  masterOrderId?: string | null;
+  subOrderIndex?: number;
+  subOrderCount?: number;
+  statusNotes?: { status: string; note: string; createdAt: string }[];
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: "Pending",
+  accepted_by_farmer: "Accepted by Farmer",
+  confirmed: "Confirmed by Farmer",
+  packed: "Packed",
+  assigned: "Driver Assigned",
+  in_transit: "In Transit",
+  delivered: "Delivered",
+  receipt_confirmed: "Receipt Confirmed",
+  cancelled: "Cancelled",
+};
+
+const STATUS_COLORS: Record<string, string> = {
+  pending: "bg-yellow-50 text-yellow-700 border-yellow-200",
+  accepted_by_farmer: "bg-cyan-50 text-cyan-700 border-cyan-200",
+  confirmed: "bg-blue-50 text-blue-700 border-blue-200",
+  packed: "bg-purple-50 text-purple-700 border-purple-200",
+  assigned: "bg-indigo-50 text-indigo-700 border-indigo-200",
+  in_transit: "bg-orange-50 text-orange-700 border-orange-200",
+  delivered: "bg-green-50 text-green-700 border-green-200",
+  receipt_confirmed: "bg-green-100 text-green-800 border-green-300",
+  cancelled: "bg-red-50 text-red-700 border-red-200",
+};
+
+const TIMELINE_STEPS = [
+  {
+    key: "pending",
+    label: "Order Placed",
+    icon: "receipt_long",
+    dateKey: "createdAt",
+  },
+  {
+    key: "accepted_by_farmer",
+    label: "Farmer Accepted",
+    icon: "task_alt",
+    dateKey: "acceptedAt",
+  },
+  {
+    key: "confirmed",
+    label: "Admin Confirmed",
+    icon: "check_circle",
+    dateKey: "confirmedAt",
+  },
+  { key: "packed", label: "Packed", icon: "inventory_2", dateKey: "packedAt" },
+  {
+    key: "assigned",
+    label: "Driver Assigned",
+    icon: "local_shipping",
+    dateKey: "assignedAt",
+  },
+  {
+    key: "in_transit",
+    label: "In Transit",
+    icon: "directions_car",
+    dateKey: "pickedUpAt",
+  },
+  {
+    key: "delivered",
+    label: "Delivered",
+    icon: "home",
+    dateKey: "deliveredAt",
+  },
+  {
+    key: "receipt_confirmed",
+    label: "Receipt Confirmed",
+    icon: "handshake",
+    dateKey: "receiptConfirmedAt",
+  },
+];
+
+const STATUS_ORDER = [
+  "pending",
+  "accepted_by_farmer",
+  "confirmed",
+  "packed",
+  "assigned",
+  "in_transit",
+  "delivered",
+  "receipt_confirmed",
+  "cancelled",
+];
+
+function fmt(n: number) {
+  return "₦" + n.toLocaleString("en-NG", { minimumFractionDigits: 0 });
+}
+
+function fmtDate(iso: string | null) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString("en-NG", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function OrderControlPage() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [selected, setSelected] = useState<Order | null>(null);
+  const [loadingList, setLoadingList] = useState(true);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [searchQ, setSearchQ] = useState("");
+
+  // Status update modal
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState("");
+  const [statusNote, setStatusNote] = useState("");
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [statusError, setStatusError] = useState("");
+
+  // Driver assignment modal
+  const [showDriverModal, setShowDriverModal] = useState(false);
+  const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [loadingDrivers, setLoadingDrivers] = useState(false);
+  const [assigningDriver, setAssigningDriver] = useState("");
+  const [driverError, setDriverError] = useState("");
+
+  // Cancellation guard state
+  const [canCancelOrder, setCanCancelOrder] = useState(true);
+  const [cancelCheckLoading, setCancelCheckLoading] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+
+  // ── Fetch list ──────────────────────────────────────────────────────────────
+  const fetchOrders = useCallback(async () => {
+    setLoadingList(true);
+    try {
+      const { payload } = await apiFetch("/admin/orders");
+      if (payload?.ok) setOrders(payload.orders ?? []);
+    } finally {
+      setLoadingList(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchOrders();
+  }, [fetchOrders]);
+
+  // ── Select order (refresh detail) ──────────────────────────────────────────
+  const selectOrder = useCallback(async (orderId: string) => {
+    setLoadingDetail(true);
+    setSelected(null);
+    setCancelCheckLoading(true);
+    try {
+      const { payload } = await apiFetch(`/admin/orders/${orderId}`);
+      if (payload?.ok) {
+        setSelected(payload.order);
+        
+        // Check if order can be cancelled
+        const { payload: cancelPayload } = await apiFetch(
+          `/admin/orders/${orderId}/can-cancel`
+        );
+        if (cancelPayload?.ok) {
+          setCanCancelOrder(cancelPayload.canCancel);
+          setCancelReason(cancelPayload.reason || "");
+        }
+      }
+    } finally {
+      setLoadingDetail(false);
+      setCancelCheckLoading(false);
+    }
+  }, []);
+
+  // ── Status update ───────────────────────────────────────────────────────────
+  function openStatusModal(status: string) {
+    setPendingStatus(status);
+    setStatusNote("");
+    setStatusError("");
+    setShowStatusModal(true);
+  }
+
+  async function submitStatusUpdate() {
+    if (!selected) return;
+    setUpdatingStatus(true);
+    setStatusError("");
+    try {
+      const { res, payload } = await apiFetch(
+        `/admin/orders/${selected._id}/status`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            status: pendingStatus,
+            notes: statusNote || undefined,
+          }),
+        },
+      );
+      if (!res.ok) {
+        setStatusError(payload?.error ?? "Failed to update.");
+        return;
+      }
+      setShowStatusModal(false);
+      // Refresh both list and detail
+      await fetchOrders();
+      await selectOrder(selected._id);
+    } catch {
+      setStatusError("Network error. Please try again.");
+    } finally {
+      setUpdatingStatus(false);
+    }
+  }
+
+  // ── Driver assignment ───────────────────────────────────────────────────────
+  async function openDriverModal() {
+    setDriverError("");
+    setShowDriverModal(true);
+    setLoadingDrivers(true);
+    try {
+      const { payload } = await apiFetch("/admin/drivers?status=active");
+      if (payload?.ok) setDrivers(payload.drivers ?? []);
+    } finally {
+      setLoadingDrivers(false);
+    }
+  }
+
+  async function assignDriver(driverId: string) {
+    if (!selected) return;
+    setAssigningDriver(driverId);
+    setDriverError("");
+    try {
+      const { res, payload } = await apiFetch(
+        `/admin/orders/${selected._id}/assign-driver`,
+        {
+          method: "POST",
+          body: JSON.stringify({ driverId }),
+        },
+      );
+      if (!res.ok) {
+        setDriverError(payload?.error ?? "Assignment failed.");
+        return;
+      }
+      setShowDriverModal(false);
+      await fetchOrders();
+      await selectOrder(selected._id);
+    } catch {
+      setDriverError("Network error.");
+    } finally {
+      setAssigningDriver("");
+    }
+  }
+
+  // ── Filtering ───────────────────────────────────────────────────────────────
+  const filteredOrders = orders.filter((o) => {
+    if (statusFilter !== "all" && o.status !== statusFilter) return false;
+    if (searchQ) {
+      const q = searchQ.toLowerCase();
+      const buyerName = o.buyerId?.name?.toLowerCase() ?? "";
+      const farmName = o.farmerId?.farmName?.toLowerCase() ?? "";
+      const id = o._id.toLowerCase();
+      if (!buyerName.includes(q) && !farmName.includes(q) && !id.includes(q))
+        return false;
+    }
+    return true;
+  });
+
+  // ── Next actions for selected order ────────────────────────────────────────
+  function getNextActions(
+    o: Order,
+  ): { label: string; status?: string; special?: string; danger?: boolean }[] {
+    switch (o.status) {
+      case "pending":
+        return [{ label: "Cancel Order", status: "cancelled", danger: true }];
+      case "accepted_by_farmer":
+        return [
+          { label: "Admin Confirm", status: "confirmed" },
+          { label: "Cancel Order", status: "cancelled", danger: true },
+        ];
+      case "confirmed":
+        return [{ label: "Cancel Order", status: "cancelled", danger: true }];
+      case "packed":
+        return [
+          { label: "Assign Driver", special: "assign_driver" },
+          { label: "Cancel Order", status: "cancelled", danger: true },
+        ];
+      case "assigned":
+        return [
+          { label: "Mark In Transit", status: "in_transit" },
+          { label: "Cancel Order", status: "cancelled", danger: true },
+        ];
+      case "in_transit":
+        return [{ label: "Mark Delivered", status: "delivered" }];
+      case "delivered":
+        return [
+          { label: "Confirm Receipt (Manual)", status: "receipt_confirmed" },
+        ];
+      default:
+        return [];
+    }
+  }
+
+  const currentStepIndex = selected
+    ? STATUS_ORDER.indexOf(selected.status)
+    : -1;
+
+  // ─── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="bg-background text-on-surface" style={{fontFamily: "'Inter', sans-serif"}}>
-      {/* Sidebar Navigation */}
-      <aside className="flex flex-col w-[280px] h-screen fixed left-0 top-0 z-40 pt-6 px-4 bg-white border-r border-gray-200">
-        <div className="flex items-center px-4 mb-8">
-          <div className="w-10 h-10 flex items-center justify-center mr-3">
-            <img alt="KizFarm Logo" className="w-full h-full object-contain" src="https://lh3.googleusercontent.com/aida/ADBb0ujvT0foH0KVcUsUv1-X4NT6qkDm-oxoWHPKnV2esAnpEYklq4ts8j8P3_GO0-dXO8ryqMabe9myPDfL0XYeqBDVig2viC4Rij2XdBmivAgOvEtr0hGHDgDKJZ1i38ZtqiD-LoHs4WVWukq8QcifpDJziKXxgrnxclqiEC_kDMK9LVOr0HmGh1xKcZ7krF1tknqWE-DCpzGSaO8Y2JOVQvTR-0-hQxIhA2Oem9ye8FJhDUNqr8nPm5RYcAimG0-7PXqDyqvgpsiJRg" />
-          </div>
-          <div>
-            <h1 className="text-xl font-bold tracking-tight text-green-900">KizFarm</h1>
-            <p className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Admin Management</p>
+    <div
+      className="bg-background text-on-surface"
+      style={{ fontFamily: "'Inter', sans-serif" }}
+    >
+      {/* ── Status Update Modal ── */}
+      {showStatusModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-8">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-900">
+                Update Status →{" "}
+                <span className="text-green-800">
+                  {STATUS_LABELS[pendingStatus] ?? pendingStatus}
+                </span>
+              </h3>
+              <button
+                onClick={() => setShowStatusModal(false)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            {statusError && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+                {statusError}
+              </div>
+            )}
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Admin Note (optional)
+              </label>
+              <textarea
+                rows={3}
+                className="w-full border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-green-800 outline-none resize-none"
+                placeholder="Add a note for this status change..."
+                value={statusNote}
+                onChange={(e) => setStatusNote(e.target.value)}
+              />
+            </div>
+            {pendingStatus === "cancelled" && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-600 rounded-lg px-4 py-3 text-sm font-medium">
+                ⚠️ This action will cancel the order. It cannot be undone.
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowStatusModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitStatusUpdate}
+                disabled={updatingStatus}
+                className={`flex-1 px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-60 ${
+                  pendingStatus === "cancelled"
+                    ? "bg-red-600 text-white hover:bg-red-700"
+                    : "bg-green-800 text-white hover:bg-green-900"
+                }`}
+              >
+                {updatingStatus ? "Updating…" : "Confirm"}
+              </button>
+            </div>
           </div>
         </div>
-        <nav className="space-y-1">
-          <a className="flex items-center px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-green-800 transition-all duration-200" href="#">
-            <span className="material-symbols-outlined mr-3" data-icon="dashboard">dashboard</span>
-            <span className="font-label-md text-label-md">Dashboard</span>
-          </a>
-          <a className="flex items-center px-4 py-3 rounded-lg text-green-800 bg-green-50 border-r-4 border-green-800 font-semibold" href="#">
-            <span className="material-symbols-outlined mr-3" data-icon="shopping_cart" style={{fontVariationSettings: "'FILL' 1"}}>shopping_cart</span>
-            <span className="font-label-md text-label-md">Orders</span>
-          </a>
-          <a className="flex items-center px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-green-800 transition-all duration-200" href="#">
-            <span className="material-symbols-outlined mr-3" data-icon="local_shipping">local_shipping</span>
-            <span className="font-label-md text-label-md">Logistics</span>
-          </a>
-          <a className="flex items-center px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-green-800 transition-all duration-200" href="#">
-            <span className="material-symbols-outlined mr-3" data-icon="inventory_2">inventory_2</span>
-            <span className="font-label-md text-label-md">Inventory</span>
-          </a>
-          <a className="flex items-center px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-green-800 transition-all duration-200" href="#">
-            <span className="material-symbols-outlined mr-3" data-icon="groups">groups</span>
-            <span className="font-label-md text-label-md">Sellers</span>
-          </a>
-          <div className="pt-4 mt-4 border-t border-slate-100">
-            <a className="flex items-center px-4 py-3 rounded-lg text-slate-600 hover:bg-slate-50 hover:text-green-800 transition-all duration-200" href="#">
-              <span className="material-symbols-outlined mr-3" data-icon="settings">settings</span>
-              <span className="font-label-md text-label-md">Settings</span>
-            </a>
-          </div>
-        </nav>
-      </aside>
+      )}
 
-      {/* Main Content Area */}
-      <main className="ml-[280px] w-[calc(100%-280px)] min-h-screen">
+      {/* ── Driver Assignment Modal ── */}
+      {showDriverModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-8 max-h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold text-slate-900">
+                Assign Driver
+              </h3>
+              <button
+                onClick={() => setShowDriverModal(false)}
+                className="text-slate-400 hover:text-slate-700"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            {driverError && (
+              <div className="mb-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">
+                {driverError}
+              </div>
+            )}
+            <p className="text-sm text-slate-500 mb-4">
+              Select an available driver to assign to this order:
+            </p>
+            <div className="flex-1 overflow-y-auto space-y-3">
+              {loadingDrivers ? (
+                <div className="flex items-center justify-center py-10 text-slate-400">
+                  <span className="material-symbols-outlined animate-spin mr-2">
+                    autorenew
+                  </span>
+                  Loading drivers…
+                </div>
+              ) : drivers.length === 0 ? (
+                <div className="text-center py-10 text-slate-400">
+                  <span className="material-symbols-outlined text-3xl mb-2 block">
+                    local_shipping
+                  </span>
+                  <p className="text-sm">
+                    No active drivers available at this time.
+                  </p>
+                </div>
+              ) : (
+                drivers.map((d) => (
+                  <div
+                    key={d._id}
+                    className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-green-300 hover:bg-green-50 transition-all"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                        <span className="material-symbols-outlined text-green-800 text-base">
+                          person
+                        </span>
+                      </div>
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">
+                          {d.name}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {d.phone} · {d.vehicleType}
+                        </p>
+                        <p className="text-xs text-slate-400">
+                          Workload: {d.activeOrdersCount ?? 0} active
+                          {d.averageRating
+                            ? ` · ${d.averageRating.toFixed(1)} stars`
+                            : ""}
+                        </p>
+                        {d.currentLocation && (
+                          <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                            <span className="material-symbols-outlined text-xs text-red-400">
+                              location_on
+                            </span>
+                            {d.currentLocation}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => assignDriver(d._id)}
+                      disabled={assigningDriver === d._id}
+                      className="px-4 py-1.5 bg-green-800 text-white text-sm font-semibold rounded-lg hover:bg-green-900 transition-colors disabled:opacity-60"
+                    >
+                      {assigningDriver === d._id ? "Assigning…" : "Assign"}
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+            <button
+              onClick={() => setShowDriverModal(false)}
+              className="mt-4 w-full px-4 py-2 border border-gray-300 text-slate-700 rounded-lg text-sm font-medium hover:bg-slate-50"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main Content Area ── */}
+      <main className="min-h-screen flex flex-col">
         {/* Top Navigation Bar */}
         <header className="flex justify-between items-center px-8 h-16 sticky top-0 z-30 bg-white/80 backdrop-blur-md border-b border-gray-200">
           <div className="flex items-center gap-4">
-            <nav className="flex items-center space-x-2 text-slate-500 font-label-md text-label-sm">
-              <a className="hover:text-green-800" href="#">Orders</a>
-              <span className="material-symbols-outlined text-[16px]" data-icon="chevron_right">chevron_right</span>
-              <span className="text-green-800 font-bold">ORD-8829-XPL</span>
+            <nav className="flex items-center space-x-2 text-slate-500 text-sm">
+              <span className="font-semibold text-green-800">
+                Orders Workspace
+              </span>
             </nav>
           </div>
           <div className="flex items-center space-x-6">
-            <div className="relative group">
-              <span className="material-symbols-outlined text-slate-500 cursor-pointer hover:text-green-800" data-icon="notifications">notifications</span>
-              <span className="absolute -top-1 -right-1 w-2 h-2 bg-error rounded-full"></span>
+            <button
+              onClick={fetchOrders}
+              className="text-slate-500 hover:text-green-800 transition-colors"
+              title="Refresh"
+            >
+              <span className="material-symbols-outlined">refresh</span>
+            </button>
+            <div className="relative">
+              <span
+                className="material-symbols-outlined text-slate-500 cursor-pointer hover:text-green-800"
+                data-icon="notifications"
+              >
+                notifications
+              </span>
+              <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full"></span>
             </div>
-            <span className="material-symbols-outlined text-slate-500 cursor-pointer hover:text-green-800" data-icon="help">help</span>
-            <div className="flex items-center space-x-3 cursor-pointer pl-4 border-l border-slate-200 ml-2">
+            <div className="flex items-center space-x-3 cursor-pointer pl-4 border-l border-slate-200">
               <div className="text-right">
-                <p className="text-xs font-bold text-on-surface">Alex Rivera</p>
-                <p className="text-[10px] text-slate-500 uppercase tracking-wider">Logistics Lead</p>
+                <p className="text-xs font-bold text-on-surface">KizFarm HQ</p>
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider">
+                  Admin
+                </p>
               </div>
-              <img alt="Admin User Profile" className="w-8 h-8 rounded-full object-cover" data-alt="professional portrait of a middle-aged male executive in a clean office setting, soft natural lighting, high-end business aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC3UGXU__Q7696WdyTMt6kUSb_A_UeqCUEkWaVXHpnKYNCdt6jQiocTx0OIQ2dIXYRzYhbrIZ_3RElPgk_snT15NtPJ33633UyKI4UnAlJyUkTlCzuLYE6nh5vtXQ6IPGJL3t2Yep44EFhkbILJOTzmcJBkQ9OPwNvBjgw8fczwY0fovufINYk3WV4EPpTadxcUiJdIddJSfpv2g7yaiwbkmxsJnsdlEJz1i_gMRlq-pTmua-VhFYs5rA-kGggx-2UrAceVjQA-HUo" />
+              <div className="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
+                <span className="material-symbols-outlined text-green-800 text-sm">
+                  admin_panel_settings
+                </span>
+              </div>
             </div>
           </div>
         </header>
 
-        {/* Content Canvas */}
-        <div className="p-8 space-y-gutter">
-          {/* Header Actions */}
-          <div className="flex justify-between items-start">
-            <div>
-              <h2 className="font-h2 text-h2 text-on-surface">Order ORD-8829-XPL</h2>
-              <p className="text-slate-500 font-body-sm mt-1">Placed on Oct 24, 2023 at 09:42 AM</p>
-            </div>
-            <div className="flex gap-3">
-              <button className="px-4 py-2 border border-error text-error font-label-md rounded-lg hover:bg-error/5 transition-colors flex items-center">
-                <span className="material-symbols-outlined mr-2 text-[20px]" data-icon="cancel">cancel</span>
-                Cancel Order
-              </button>
-              <button className="px-4 py-2 border border-outline text-on-surface-variant font-label-md rounded-lg hover:bg-slate-50 transition-colors flex items-center">
-                <span className="material-symbols-outlined mr-2 text-[20px]" data-icon="support_agent">support_agent</span>
-                Contact Support
-              </button>
-              <div className="relative group">
-                <button className="px-4 py-2 bg-primary text-on-primary font-label-md rounded-lg flex items-center shadow-sm">
-                  Update Status: Shipped
-                  <span className="material-symbols-outlined ml-2 text-[20px]" data-icon="expand_more">expand_more</span>
-                </button>
-                {/* Hidden dropdown for UI demonstration */}
-                <div className="hidden absolute right-0 mt-2 w-48 bg-white border border-gray-200 shadow-xl rounded-xl z-50 overflow-hidden">
-                  <a className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" href="#">Processing</a>
-                  <a className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" href="#">Packed</a>
-                  <a className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" href="#">Shipped</a>
-                  <a className="block px-4 py-2 text-sm text-slate-700 hover:bg-slate-50" href="#">Delivered</a>
-                </div>
+        {/* ── Two-Panel Layout ── */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* ── Left Panel: Orders List ── */}
+          <div className="w-[380px] flex-shrink-0 border-r border-gray-200 bg-white flex flex-col">
+            {/* Search + Filter */}
+            <div className="p-4 border-b border-gray-100 space-y-3">
+              <div className="relative">
+                <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-base">
+                  search
+                </span>
+                <input
+                  className="w-full bg-slate-50 border border-gray-200 rounded-lg pl-9 pr-4 py-2 text-sm focus:ring-2 focus:ring-green-800 focus:border-green-800 outline-none"
+                  placeholder="Search orders, buyers…"
+                  value={searchQ}
+                  onChange={(e) => setSearchQ(e.target.value)}
+                />
               </div>
+              <div className="flex gap-2 flex-wrap">
+                {[
+                  "all",
+                  "pending",
+                  "accepted_by_farmer",
+                  "confirmed",
+                  "packed",
+                  "assigned",
+                  "in_transit",
+                  "delivered",
+                  "cancelled",
+                ].map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setStatusFilter(s)}
+                    className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors border ${
+                      statusFilter === s
+                        ? "bg-green-800 text-white border-green-800"
+                        : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100"
+                    }`}
+                  >
+                    {s === "all" ? "All" : STATUS_LABELS[s]}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Orders list */}
+            <div className="flex-1 overflow-y-auto divide-y divide-gray-100">
+              {loadingList ? (
+                <div className="flex items-center justify-center py-16 text-slate-400">
+                  <span className="material-symbols-outlined animate-spin mr-2">
+                    autorenew
+                  </span>
+                  Loading orders…
+                </div>
+              ) : filteredOrders.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-slate-400 px-6 text-center">
+                  <span className="material-symbols-outlined text-4xl mb-3">
+                    shopping_cart
+                  </span>
+                  <p className="text-sm font-medium">No orders found.</p>
+                </div>
+              ) : (
+                filteredOrders.map((order) => (
+                  <button
+                    key={order._id}
+                    onClick={() => selectOrder(order._id)}
+                    className={`w-full text-left px-4 py-4 hover:bg-slate-50 transition-colors ${
+                      selected?._id === order._id
+                        ? "bg-green-50 border-l-4 border-l-green-800"
+                        : "border-l-4 border-l-transparent"
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2 mb-1">
+                      <span className="text-xs font-bold text-slate-700 font-mono">
+                        #{order._id.slice(-8).toUpperCase()}
+                      </span>
+                      <span
+                        className={`inline-flex px-2 py-0.5 rounded-full text-[10px] font-bold border ${STATUS_COLORS[order.status] ?? "bg-slate-50 text-slate-600 border-slate-200"}`}
+                      >
+                        {STATUS_LABELS[order.status] ?? order.status}
+                      </span>
+                    </div>
+                    <p className="text-sm font-semibold text-slate-900 truncate">
+                      {order.buyerId?.name ?? "Unknown Buyer"}
+                    </p>
+                    <p className="text-xs text-slate-500 truncate">
+                      {order.farmerId?.farmName ?? "Unknown Farm"}
+                    </p>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className="text-xs font-bold text-green-800">
+                        {fmt(order.total)}
+                      </span>
+                      <span className="text-xs text-slate-400">
+                        {fmtDate(order.createdAt).split(",")[0]}
+                      </span>
+                    </div>
+                  </button>
+                ))
+              )}
             </div>
           </div>
 
-          {/* Bento Grid Layout */}
-          <div className="grid grid-cols-12 gap-gutter">
-            {/* Section 1: Order Summary Card (Span 8) */}
-            <div className="col-span-8 space-y-gutter">
-              {/* Metrics Row */}
-              <div className="grid grid-cols-3 gap-gutter">
-                <div className="bg-white p-lg border border-[#EAECF0] rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
-                  <p className="text-slate-500 font-label-sm uppercase mb-1">Total Amount</p>
-                  <h3 className="font-h1 text-h1 text-green-900">$1,248.50</h3>
-                  <div className="mt-2 flex items-center">
-                    <span className="bg-green-100 text-green-800 text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">Paid</span>
-                  </div>
-                </div>
-                <div className="bg-white p-lg border border-[#EAECF0] rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
-                  <p className="text-slate-500 font-label-sm uppercase mb-1">Items</p>
-                  <h3 className="font-h1 text-h1 text-on-surface">3 Products</h3>
-                  <p className="text-slate-400 text-sm mt-2">Total weight: 450kg</p>
-                </div>
-                <div className="bg-white p-lg border border-[#EAECF0] rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
-                  <p className="text-slate-500 font-label-sm uppercase mb-1">Delivery Estimate</p>
-                  <h3 className="font-h1 text-h1 text-on-surface">Oct 28</h3>
-                  <p className="text-slate-400 text-sm mt-2">Via FastTrack Agri</p>
-                </div>
+          {/* ── Right Panel: Order Detail ── */}
+          <div className="flex-1 overflow-y-auto bg-slate-50/50">
+            {loadingDetail ? (
+              <div className="flex items-center justify-center h-full text-slate-400">
+                <span className="material-symbols-outlined animate-spin mr-2">
+                  autorenew
+                </span>
+                Loading order detail…
               </div>
+            ) : !selected ? (
+              <div className="flex flex-col items-center justify-center h-full text-slate-400 space-y-3">
+                <span className="material-symbols-outlined text-5xl">
+                  receipt_long
+                </span>
+                <p className="text-sm font-medium">
+                  Select an order to view details
+                </p>
+              </div>
+            ) : (
+              <div className="p-8 space-y-6">
+                {/* Header */}
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h2 className="text-xl font-bold text-slate-900">
+                      Order{" "}
+                      <span className="font-mono">
+                        #{selected._id.slice(-8).toUpperCase()}
+                      </span>
+                    </h2>
+                    <p className="text-slate-500 text-sm mt-1">
+                      Placed {fmtDate(selected.createdAt)}
+                    </p>
+                    {selected.masterOrderId && (
+                      <p className="text-xs text-slate-400 mt-1">
+                        Master #{selected.masterOrderId} · Sub-order{" "}
+                        {selected.subOrderIndex ?? 1}/
+                        {selected.subOrderCount ?? 1}
+                      </p>
+                    )}
+                    <div className="mt-2">
+                      <span
+                        className={`inline-flex px-3 py-1 rounded-full text-xs font-bold border ${STATUS_COLORS[selected.status] ?? ""}`}
+                      >
+                        {STATUS_LABELS[selected.status] ?? selected.status}
+                      </span>
+                    </div>
+                  </div>
 
-              {/* Section 3: Product Details */}
-              <div className="bg-white border border-[#EAECF0] rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
-                  <h4 className="font-h3 text-h3">Order Contents</h4>
-                  <span className="text-slate-400 text-sm">3 Items Total</span>
-                </div>
-                <div className="divide-y divide-gray-100">
-                  {/* Product 1 */}
-                  <div className="p-6 flex items-center gap-6 group hover:bg-slate-50 transition-colors">
-                    <img alt="Organic Potatoes" className="w-20 h-20 rounded-lg object-cover border border-gray-200" data-alt="close-up of earthy organic russet potatoes in a wooden crate, warm natural morning light, rustic agricultural setting" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDnxCJ7VS6A-K5Sm3PCvLqGEfFE_5AL1XCN8ZzuH7TIc7dihhoHKhw9h2IfF8DuNWbfYRPnv12yTf3hSQROlM3BOI8R4cPc8BdjtlMkwa0OWLfgnL-B7vybZSqBIbiQrQ7FUUhSUH_o5oiXkU6nw8N66yOSUu8KERxq4fNwyMH0013SQkGiYSxElzJagNS_h9AbjdPmyHSYzOX3pWHtdjN1HLCIXeMg0XzYrI_mCftSzdUtm8JJ3sk2uhC-HYTgjSFwuM_zAMdrA0A" />
-                    <div className="flex-1">
-                      <h5 className="font-label-md text-body-md text-on-surface">Premium Russet Potatoes</h5>
-                      <p className="text-slate-500 text-sm">Category: Root Vegetables</p>
-                      <p className="text-slate-400 text-xs mt-1">SKU: VG-POT-001</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-on-surface">$0.85 / kg</p>
-                      <p className="text-slate-500 text-sm">x 200kg</p>
-                      <p className="font-bold text-green-800 mt-1">$170.00</p>
-                    </div>
-                  </div>
-                  {/* Product 2 */}
-                  <div className="p-6 flex items-center gap-6 group hover:bg-slate-50 transition-colors">
-                    <img alt="Grade A Large Eggs" className="w-20 h-20 rounded-lg object-cover border border-gray-200" data-alt="macro shot of fresh brown farm eggs in a cardboard carton, shallow depth of field, soft diffused window light" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBIgOjaMQztBNey7RI2jPC31kW5NpnKtUpArnIJ5gmPG3UeICJHFHTayZxroxqYdd3swLSNunwa78U3PwmUoDGESKQ95SDJON3dtb18nHOGnIzqYgfMjGKY1EiieJO8PYz7ddXCqiWKqdHDmFd46M0xvquFvBVcVImStb4iEpQpmfTNo6s7oh1qnsxmri3uuw6DNNWX4TfCB5FauJEfvgAVRcP3cT4ADWTkHFysR-PWXiG3sB-ZMTgruAdeI0dzO0w_ZsnS_nTvWDU" />
-                    <div className="flex-1">
-                      <h5 className="font-label-md text-body-md text-on-surface">Grade A Large Brown Eggs</h5>
-                      <p className="text-slate-500 text-sm">Category: Dairy &amp; Poultry</p>
-                      <p className="text-slate-400 text-xs mt-1">SKU: DY-EGG-042</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-on-surface">$4.50 / dozen</p>
-                      <p className="text-slate-500 text-sm">x 50 doz</p>
-                      <p className="font-bold text-green-800 mt-1">$225.00</p>
-                    </div>
-                  </div>
-                  {/* Product 3 */}
-                  <div className="p-6 flex items-center gap-6 group hover:bg-slate-50 transition-colors">
-                    <img alt="High Protein Wheat" className="w-20 h-20 rounded-lg object-cover border border-gray-200" data-alt="golden wheat grains held in hands, sun-drenched harvest scene, rich yellow tones and sharp detail" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD9pBrDI3avKNARqhN2uilauIUrygr6prCWEJKkmhidliDSAzIICb3eB8mOgJ998L2eAscdTXIE-YswvSqLlZQ_ZojCrwEqwcQOv-J7vBRk7KQD23XCN5wJ8aGjsjCjAIfooJ1L-fHgdooyq_tlY2E_J9LOueuud61hw9ksIk4_e08sEXIAktdbrPYiPDp2WQK_tu9EUzTxL6OmvWYWoYyQSzOcVuWqgR2WZNLRD7jbP66AGcWQvi4jEuTe2PyCFDU50FfoC3QTKDo" />
-                    <div className="flex-1">
-                      <h5 className="font-label-md text-body-md text-on-surface">Whole Grain Hard Red Wheat</h5>
-                      <p className="text-slate-500 text-sm">Category: Grains</p>
-                      <p className="text-slate-400 text-xs mt-1">SKU: GR-WHT-982</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="font-bold text-on-surface">$4.25 / kg</p>
-                      <p className="text-slate-500 text-sm">x 200kg</p>
-                      <p className="font-bold text-green-800 mt-1">$850.00</p>
-                    </div>
+                  {/* Action Buttons */}
+                  <div className="flex flex-wrap gap-2 justify-end max-w-xs">
+                    {getNextActions(selected).map((action) => {
+                      const isCancelDisabled = action.danger && !canCancelOrder;
+                      return (
+                        <div key={action.label} className="relative group">
+                          <button
+                            onClick={() => {
+                              if (isCancelDisabled) return;
+                              if (action.special === "assign_driver") {
+                                openDriverModal();
+                              } else if (action.status) {
+                                openStatusModal(action.status);
+                              }
+                            }}
+                            disabled={isCancelDisabled}
+                            title={isCancelDisabled ? cancelReason : undefined}
+                            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                              isCancelDisabled
+                                ? "border border-gray-300 text-gray-400 cursor-not-allowed opacity-50"
+                                : action.danger
+                                  ? "border border-red-300 text-red-600 hover:bg-red-50"
+                                  : action.special === "assign_driver"
+                                    ? "bg-indigo-600 text-white hover:bg-indigo-700"
+                                    : "bg-green-800 text-white hover:bg-green-900"
+                            }`}
+                          >
+                            {action.label}
+                          </button>
+                          {isCancelDisabled && (
+                            <div className="absolute right-0 bottom-full mb-2 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1 whitespace-nowrap z-10">
+                              {cancelReason}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-                <div className="bg-slate-50 p-6 flex flex-col items-end space-y-2">
-                  <div className="flex justify-between w-48 text-slate-500 text-sm">
-                    <span>Subtotal:</span>
-                    <span>$1,245.00</span>
-                  </div>
-                  <div className="flex justify-between w-48 text-slate-500 text-sm">
-                    <span>Shipping:</span>
-                    <span>$3.50</span>
-                  </div>
-                  <div className="flex justify-between w-48 font-bold text-on-surface text-lg pt-2 border-t border-slate-200">
-                    <span>Total:</span>
-                    <span className="text-green-800">$1,248.50</span>
-                  </div>
-                </div>
-              </div>
-            </div>
 
-            {/* Section 2 & 4: Sidebar Details (Span 4) */}
-            <div className="col-span-4 space-y-gutter">
-              {/* Section 2: Buyer & Farmer Info */}
-              <div className="bg-white border border-[#EAECF0] rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
-                <div className="px-6 py-4 border-b border-gray-100">
-                  <h4 className="font-label-sm uppercase tracking-wider text-slate-500">Stakeholder Information</h4>
-                </div>
-                <div className="p-6 space-y-6">
-                  {/* Buyer */}
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-full bg-tertiary-fixed flex items-center justify-center flex-shrink-0">
-                      <span className="material-symbols-outlined text-tertiary" data-icon="person">person</span>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-slate-400 uppercase">Buyer</p>
-                      <h5 className="font-bold text-on-surface">Whole Foods Coop Inc.</h5>
-                      <p className="text-sm text-slate-500">contact@wholefoodscoop.com</p>
-                      <p className="text-sm text-slate-500">+1 (555) 012-3456</p>
-                    </div>
+                {/* 3 metric cards */}
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-white p-5 border border-gray-200 rounded-xl shadow-sm">
+                    <p className="text-xs font-semibold text-slate-500 uppercase mb-1">
+                      Total Amount
+                    </p>
+                    <h3 className="text-2xl font-bold text-green-900">
+                      {fmt(selected.total)}
+                    </h3>
+                    <span
+                      className={`text-[10px] mt-2 inline-block px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                        selected.paymentStatus === "paid"
+                          ? "bg-green-100 text-green-800"
+                          : "bg-yellow-100 text-yellow-800"
+                      }`}
+                    >
+                      {selected.paymentStatus}
+                    </span>
                   </div>
-                  {/* Farmer */}
-                  <div className="flex items-start gap-4">
-                    <div className="w-10 h-10 rounded-full bg-primary-fixed flex items-center justify-center flex-shrink-0">
-                      <span className="material-symbols-outlined text-primary" data-icon="agriculture">agriculture</span>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold text-slate-400 uppercase">Producer</p>
-                      <h5 className="font-bold text-on-surface">Green Valley Farms</h5>
-                      <p className="text-sm text-slate-500">orders@greenvalley.agri</p>
-                      <p className="text-sm text-slate-500">ID: GV-9921-X</p>
-                    </div>
+                  <div className="bg-white p-5 border border-gray-200 rounded-xl shadow-sm">
+                    <p className="text-xs font-semibold text-slate-500 uppercase mb-1">
+                      Items
+                    </p>
+                    <h3 className="text-2xl font-bold text-slate-900">
+                      {selected.items.length} Product
+                      {selected.items.length !== 1 ? "s" : ""}
+                    </h3>
+                    <p className="text-slate-400 text-xs mt-2">
+                      {selected.paymentMethod}
+                    </p>
+                  </div>
+                  <div className="bg-white p-5 border border-gray-200 rounded-xl shadow-sm">
+                    <p className="text-xs font-semibold text-slate-500 uppercase mb-1">
+                      Driver
+                    </p>
+                    {selected.driverId ? (
+                      <>
+                        <h3 className="text-sm font-bold text-slate-900">
+                          {selected.driverId.name}
+                        </h3>
+                        <p className="text-xs text-slate-400 mt-1">
+                          {selected.driverId.phone}
+                        </p>
+                      </>
+                    ) : (
+                      <h3 className="text-sm font-semibold text-slate-400">
+                        Not Assigned
+                      </h3>
+                    )}
                   </div>
                 </div>
-              </div>
 
-              {/* Section 4: Delivery Details */}
-              <div className="bg-white border border-[#EAECF0] rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.05)] overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-100">
-                  <h4 className="font-label-sm uppercase tracking-wider text-slate-500">Delivery &amp; Address</h4>
-                </div>
-                <div className="p-0">
-                  <div className="h-32 bg-slate-200 relative">
-                    <img alt="Map view showing delivery location in suburban Kansas City, satellite view with street overlays" className="w-full h-full object-cover" data-location="Kansas City" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDqnR7PrFA4JwCIJltaEQhSTi7Hb6zoIjisZaxZslW-qyB846HppDsGn_7MbxwUkoE-JPwKxxAsepHe-FZ89G2DsgIATDd_rkRDtcakQBLet6HdL43n9RodyBuY8Iikzqb0HKMRSZXg4GracBTnV7Q_Brgw5uBCjy6PXu23OR-qFY00mH6azJ5F837qFHXl9I0E6HYOzuZfk-Px9YaMfBRTArwGe20vI3v1PD4I6-rdLBOcysYCYnSYvcfWxsBBlAzSCBRsuvpGVs0" />
-                    <div className="absolute inset-0 bg-black/10 flex items-center justify-center">
-                      <div className="bg-white p-1 rounded-full shadow-lg">
-                        <span className="material-symbols-outlined text-error" data-icon="location_on" style={{fontVariationSettings: "'FILL' 1"}}>location_on</span>
+                {/* Bento Grid */}
+                <div className="grid grid-cols-12 gap-4">
+                  {/* Order Contents */}
+                  <div className="col-span-8 space-y-4">
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                      <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center">
+                        <h4 className="font-semibold text-slate-900">
+                          Order Contents
+                        </h4>
+                        <span className="text-slate-400 text-sm">
+                          {selected.items.length} Items
+                        </span>
+                      </div>
+                      <div className="divide-y divide-gray-100">
+                        {selected.items.map((item, i) => (
+                          <div
+                            key={i}
+                            className="p-5 flex items-center gap-5 hover:bg-slate-50 transition-colors"
+                          >
+                            {item.image ? (
+                              <img
+                                src={item.image}
+                                alt={item.name}
+                                className="w-16 h-16 rounded-lg object-cover border border-gray-200"
+                              />
+                            ) : (
+                              <div className="w-16 h-16 rounded-lg bg-green-50 border border-green-100 flex items-center justify-center flex-shrink-0">
+                                <span className="material-symbols-outlined text-green-400">
+                                  local_florist
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex-1">
+                              <h5 className="font-semibold text-slate-900 text-sm">
+                                {item.name}
+                              </h5>
+                              <p className="text-slate-400 text-xs mt-0.5">
+                                {item.unit ?? "unit"}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="font-bold text-slate-700 text-sm">
+                                {fmt(item.price)}
+                              </p>
+                              <p className="text-slate-500 text-xs">
+                                × {item.quantity}
+                              </p>
+                              <p className="font-bold text-green-800 text-sm mt-1">
+                                {fmt(item.price * item.quantity)}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                      <div className="bg-slate-50 p-5 flex flex-col items-end space-y-1.5">
+                        <div className="flex justify-between w-44 text-slate-500 text-sm">
+                          <span>Subtotal:</span>
+                          <span>{fmt(selected.subtotal)}</span>
+                        </div>
+                        <div className="flex justify-between w-44 text-slate-500 text-sm">
+                          <span>Delivery:</span>
+                          <span>{fmt(selected.deliveryFee)}</span>
+                        </div>
+                        <div className="flex justify-between w-44 font-bold text-slate-900 text-base pt-2 border-t border-slate-200">
+                          <span>Total:</span>
+                          <span className="text-green-800">
+                            {fmt(selected.total)}
+                          </span>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="p-6">
-                    <div className="flex items-start gap-3 mb-4">
-                      <span className="material-symbols-outlined text-slate-400 mt-1" data-icon="home">home</span>
-                      <div>
-                        <h5 className="font-bold text-on-surface">Central Distribution Hub</h5>
-                        <p className="text-sm text-slate-500">842 Industrial Way, Suite 102</p>
-                        <p className="text-sm text-slate-500">Kansas City, MO 64106</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="material-symbols-outlined text-slate-400" data-icon="local_shipping">local_shipping</span>
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold">Priority Freight</p>
-                        <p className="text-xs text-slate-500">Tracking: #AG-7766-9912</p>
-                      </div>
-                      <button className="text-primary text-xs font-bold hover:underline">Track Live</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
 
-              {/* Section 5: Timeline Tracking UI */}
-              <div className="bg-white border border-[#EAECF0] rounded-xl shadow-[0_1px_3px_rgba(0,0,0,0.05)]">
-                <div className="px-6 py-4 border-b border-gray-100">
-                  <h4 className="font-label-sm uppercase tracking-wider text-slate-500">Order Timeline</h4>
-                </div>
-                <div className="p-6 space-y-6">
-                  <div className="relative pl-8">
-                    {/* Vertical Line */}
-                    <div className="absolute left-3.5 top-0 bottom-0 w-0.5 bg-slate-100"></div>
-                    {/* Step 1 (Completed) */}
-                    <div className="relative mb-8">
-                      <div className="absolute -left-8 w-7 h-7 bg-green-800 rounded-full border-4 border-white shadow-sm flex items-center justify-center">
-                        <span className="material-symbols-outlined text-white text-[14px]" data-icon="check">check</span>
+                    {/* Admin Notes */}
+                    {selected.adminNotes && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl p-5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="material-symbols-outlined text-amber-600 text-base">
+                            sticky_note_2
+                          </span>
+                          <h4 className="text-sm font-semibold text-amber-800">
+                            Admin Note
+                          </h4>
+                        </div>
+                        <p className="text-sm text-amber-700">
+                          {selected.adminNotes}
+                        </p>
                       </div>
-                      <h5 className="text-sm font-bold text-on-surface">Order Placed</h5>
-                      <p className="text-xs text-slate-400">Oct 24, 2023 · 09:42 AM</p>
+                    )}
+                    {selected.statusNotes &&
+                      selected.statusNotes.length > 0 && (
+                        <div className="bg-white border border-gray-200 rounded-xl p-5">
+                          <div className="flex items-center gap-2 mb-3">
+                            <span className="material-symbols-outlined text-green-800 text-base">
+                              timeline
+                            </span>
+                            <h4 className="text-sm font-semibold text-slate-900">
+                              Lifecycle Notes
+                            </h4>
+                          </div>
+                          <div className="space-y-2">
+                            {selected.statusNotes.map((note, index) => (
+                              <div
+                                key={`${note.createdAt}-${index}`}
+                                className="text-xs text-slate-600 border-l-2 border-green-700 pl-3"
+                              >
+                                <span className="font-bold">
+                                  {STATUS_LABELS[note.status] ?? note.status}
+                                </span>{" "}
+                                · {fmtDate(note.createdAt)}
+                                <p className="mt-0.5">{note.note}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                  </div>
+
+                  {/* Sidebar Cards */}
+                  <div className="col-span-4 space-y-4">
+                    {/* Stakeholders */}
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="px-5 py-4 border-b border-gray-100">
+                        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                          Stakeholders
+                        </h4>
+                      </div>
+                      <div className="p-5 space-y-5">
+                        {/* Buyer */}
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center flex-shrink-0">
+                            <span className="material-symbols-outlined text-slate-500 text-base">
+                              person
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-semibold text-slate-400 uppercase">
+                              Buyer
+                            </p>
+                            <h5 className="font-semibold text-slate-900 text-sm">
+                              {selected.buyerId?.name ?? "—"}
+                            </h5>
+                            <p className="text-xs text-slate-500">
+                              {selected.buyerId?.email ?? ""}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {selected.buyerId?.phone ?? ""}
+                            </p>
+                          </div>
+                        </div>
+                        {/* Farmer */}
+                        <div className="flex items-start gap-3">
+                          <div className="w-9 h-9 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
+                            <span className="material-symbols-outlined text-green-800 text-base">
+                              agriculture
+                            </span>
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-semibold text-slate-400 uppercase">
+                              Producer
+                            </p>
+                            <h5 className="font-semibold text-slate-900 text-sm">
+                              {selected.farmerId?.farmName ?? "—"}
+                            </h5>
+                            <p className="text-xs text-slate-500">
+                              {selected.farmerId?.location ?? ""}
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {selected.farmerId?.phone ?? ""}
+                            </p>
+                          </div>
+                        </div>
+                        {/* Driver */}
+                        {selected.driverId && (
+                          <div className="flex items-start gap-3">
+                            <div className="w-9 h-9 rounded-full bg-indigo-100 flex items-center justify-center flex-shrink-0">
+                              <span className="material-symbols-outlined text-indigo-600 text-base">
+                                local_shipping
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-semibold text-slate-400 uppercase">
+                                Driver
+                              </p>
+                              <h5 className="font-semibold text-slate-900 text-sm">
+                                {selected.driverId.name}
+                              </h5>
+                              <p className="text-xs text-slate-500">
+                                {selected.driverId.phone}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {selected.driverId.vehicleType}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    {/* Step 2 (Completed) */}
-                    <div className="relative mb-8">
-                      <div className="absolute -left-8 w-7 h-7 bg-green-800 rounded-full border-4 border-white shadow-sm flex items-center justify-center">
-                        <span className="material-symbols-outlined text-white text-[14px]" data-icon="check">check</span>
+
+                    {/* Delivery Address */}
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+                      <div className="px-5 py-4 border-b border-gray-100">
+                        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                          Delivery Address
+                        </h4>
                       </div>
-                      <h5 className="text-sm font-bold text-on-surface">Payment Verified</h5>
-                      <p className="text-xs text-slate-400">Oct 24, 2023 · 10:15 AM</p>
+                      <div className="p-5">
+                        <div className="flex items-start gap-3">
+                          <span className="material-symbols-outlined text-slate-400 mt-0.5">
+                            home
+                          </span>
+                          <div>
+                            <h5 className="font-semibold text-slate-900 text-sm">
+                              {selected.deliveryAddress.label ??
+                                "Delivery Address"}
+                            </h5>
+                            <p className="text-sm text-slate-500">
+                              {selected.deliveryAddress.street}
+                            </p>
+                            <p className="text-sm text-slate-500">
+                              {[
+                                selected.deliveryAddress.city,
+                                selected.deliveryAddress.state,
+                              ]
+                                .filter(Boolean)
+                                .join(", ")}
+                            </p>
+                            {selected.deliveryAddress.phone && (
+                              <p className="text-xs text-slate-400 mt-1">
+                                {selected.deliveryAddress.phone}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    {/* Step 3 (Current) */}
-                    <div className="relative mb-8">
-                      <div className="absolute -left-8 w-7 h-7 bg-primary-container rounded-full border-4 border-white shadow-sm flex items-center justify-center animate-pulse">
-                        <div className="w-1.5 h-1.5 bg-white rounded-full"></div>
+
+                    {/* Timeline */}
+                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm">
+                      <div className="px-5 py-4 border-b border-gray-100">
+                        <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                          Order Timeline
+                        </h4>
                       </div>
-                      <h5 className="text-sm font-bold text-green-800">Shipped from Farm</h5>
-                      <p className="text-xs text-slate-400">Oct 26, 2023 · 02:30 PM</p>
-                      <p className="text-[11px] bg-green-50 text-green-800 inline-block px-2 py-0.5 rounded mt-1">On Schedule</p>
-                    </div>
-                    {/* Step 4 (Future) */}
-                    <div className="relative">
-                      <div className="absolute -left-8 w-7 h-7 bg-slate-100 rounded-full border-4 border-white shadow-sm flex items-center justify-center">
+                      <div className="p-5">
+                        <div className="relative pl-7">
+                          <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-slate-100"></div>
+                          {TIMELINE_STEPS.map((step, idx) => {
+                            const stepIdx = STATUS_ORDER.indexOf(step.key);
+                            const isCancelled = selected.status === "cancelled";
+                            const isDone =
+                              !isCancelled && stepIdx <= currentStepIndex;
+                            const isCurrent =
+                              !isCancelled && step.key === selected.status;
+                            const dateVal = (
+                              selected as Record<string, unknown>
+                            )[step.dateKey] as string | null;
+
+                            return (
+                              <div
+                                key={step.key}
+                                className={`relative mb-6 last:mb-0 ${isCurrent ? "" : ""}`}
+                              >
+                                <div
+                                  className={`absolute -left-7 w-6 h-6 rounded-full border-2 border-white shadow-sm flex items-center justify-center ${
+                                    isDone
+                                      ? "bg-green-800"
+                                      : isCurrent
+                                        ? "bg-green-400 animate-pulse"
+                                        : "bg-slate-100"
+                                  }`}
+                                >
+                                  {isDone && (
+                                    <span
+                                      className="material-symbols-outlined text-white"
+                                      style={{ fontSize: "12px" }}
+                                    >
+                                      check
+                                    </span>
+                                  )}
+                                </div>
+                                <h5
+                                  className={`text-xs font-semibold ${isDone || isCurrent ? "text-slate-900" : "text-slate-400"}`}
+                                >
+                                  {step.label}
+                                </h5>
+                                <p className="text-[10px] text-slate-400">
+                                  {step.key === "pending"
+                                    ? fmtDate(selected.createdAt)
+                                    : fmtDate(dateVal ?? null)}
+                                </p>
+                              </div>
+                            );
+                          })}
+                          {/* Cancelled step */}
+                          {selected.status === "cancelled" && (
+                            <div className="relative mb-0">
+                              <div className="absolute -left-7 w-6 h-6 rounded-full border-2 border-white shadow-sm flex items-center justify-center bg-red-500">
+                                <span
+                                  className="material-symbols-outlined text-white"
+                                  style={{ fontSize: "12px" }}
+                                >
+                                  close
+                                </span>
+                              </div>
+                              <h5 className="text-xs font-semibold text-red-600">
+                                Cancelled
+                              </h5>
+                              <p className="text-[10px] text-slate-400">
+                                {fmtDate(selected.cancelledAt)}
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      <h5 className="text-sm font-bold text-slate-400">Out for Delivery</h5>
-                      <p className="text-xs text-slate-300">Estimated Oct 28</p>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       </main>

@@ -9,7 +9,7 @@ export default function BlogPage() {
       <nav className="sticky top-0 z-50 bg-white border-b border-zinc-100">
         <div className="max-w-[1440px] mx-auto px-6 py-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <img alt="KizFarm Logo" className="h-12 w-auto" data-alt="minimalist professional logo for an agricultural tech company KizFarm in deep green and white" src="https://lh3.googleusercontent.com/aida/ADBb0ujrVNZn0PXXU7LaKBcyTR7OSOmvq4w6N-34wwcSmC0YSB8o9Fny5rOScxtRIRbn8OdOL7ot7UkBOLkwNoCbr5jVi-4thha6GNce2j0ZoBhd6LroPvl6-U9z8Xip84Hcqyw9qMltXULkoDeXo58r_J_pmrs0ZmdMjucr8eBDYQA9zkvJrg923pIDJP_oFMZaUMRQ6dLJ7J1UY3G8DMV7Fd2Ng2P06N0NeGa3z4VoJ2IJxuz-Y5THF05B21amOm14YAImFTshjiu-QA" />
+            <img alt="KizFarm Logo" className="h-12 w-auto" data-alt="minimalist professional logo for an agricultural tech company KizFarm in deep green and white" src="/logo.jpeg" />
           </div>
           <div className="hidden md:flex items-center gap-8">
             <a className="text-zinc-500 hover:text-[#1B6D24] font-label-sm text-label-sm transition-colors" href="#">Market</a>

@@ -1,8 +1,11 @@
-'use client';
+"use client";
+
+import TopNav from "@/components/top-nav";
 
 export default function AboutPage() {
   return (
     <main className="pt-20">
+      <TopNav />
       {/* Hero Section */}
       <section className="relative h-[600px] flex items-center justify-center overflow-hidden">
         <img
@@ -12,9 +15,12 @@ export default function AboutPage() {
         />
         <div className="absolute inset-0 bg-black/30"></div>
         <div className="relative z-10 text-center px-6 max-w-4xl">
-          <h1 className="text-display-xl font-display-xl text-white mb-6">Cultivating Direct Connections</h1>
+          <h1 className="text-display-xl font-display-xl text-white mb-6">
+            Cultivating Direct Connections
+          </h1>
           <p className="text-body-lg font-body-lg text-white/90 max-w-2xl mx-auto">
-            KIZ FARM bridges the gap between fertile soil and the modern market, ensuring farmers thrive through precision logistics and fair trade.
+            KIZ FARM bridges the gap between fertile soil and the modern market,
+            ensuring farmers thrive through precision logistics and fair trade.
           </p>
         </div>
       </section>
@@ -23,17 +29,33 @@ export default function AboutPage() {
       <section className="max-w-[1280px] mx-auto py-xl px-6 bg-white">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-12 items-center">
           <div className="md:col-span-7">
-            <span className="text-label-md font-label-md text-primary uppercase tracking-widest mb-4 block">Our Roots</span>
-            <h2 className="text-headline-lg font-headline-lg text-on-surface mb-8">The Story of KIZ FARM</h2>
+            <span className="text-label-md font-label-md text-primary uppercase tracking-widest mb-4 block">
+              Our Roots
+            </span>
+            <h2 className="text-headline-lg font-headline-lg text-on-surface mb-8">
+              The Story of KIZ FARM
+            </h2>
             <div className="space-y-6 text-body-md font-body-md text-on-surface-variant">
               <p>
-                Born in the heart of rural landscapes, KIZ FARM began with a simple observation: the world&apos;s most vital producers were the furthest from the rewards of their labor. We saw high-quality produce languishing in local markets while urban demand for fresh, sustainable food reached an all-time high.
+                Born in the heart of rural landscapes, KIZ FARM began with a
+                simple observation: the world&apos;s most vital producers were
+                the furthest from the rewards of their labor. We saw
+                high-quality produce languishing in local markets while urban
+                demand for fresh, sustainable food reached an all-time high.
               </p>
               <p>
-                We didn&apos;t just build a marketplace; we built an ecosystem. By integrating precision agricultural software with a robust physical distribution network, we empower farmers to predict yields, manage soil health, and access global buyers with the tap of a screen.
+                We didn&apos;t just build a marketplace; we built an ecosystem.
+                By integrating precision agricultural software with a robust
+                physical distribution network, we empower farmers to predict
+                yields, manage soil health, and access global buyers with the
+                tap of a screen.
               </p>
               <p>
-                Today, KIZ FARM serves as a digital-soil bridge. We provide the tools for sustainable growth and the logistics for rapid harvest-to-home delivery, ensuring that &quot;farm fresh&quot; isn&apos;t just a label—it&apos;s a standard of living for our community.
+                Today, KIZ FARM serves as a digital-soil bridge. We provide the
+                tools for sustainable growth and the logistics for rapid
+                harvest-to-home delivery, ensuring that &quot;farm fresh&quot;
+                isn&apos;t just a label—it&apos;s a standard of living for our
+                community.
               </p>
             </div>
           </div>
@@ -48,11 +70,20 @@ export default function AboutPage() {
             <div className="absolute -bottom-8 -left-8 p-6 bg-white rounded-lg soil-shadow hidden lg:block border border-outline-variant/30">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-primary" data-icon="groups">groups</span>
+                  <span
+                    className="material-symbols-outlined text-primary"
+                    data-icon="groups"
+                  >
+                    groups
+                  </span>
                 </div>
                 <div>
-                  <div className="text-headline-md font-headline-md text-primary">5,000+</div>
-                  <div className="text-caption font-caption text-on-surface-variant uppercase">Partner Farmers</div>
+                  <div className="text-headline-md font-headline-md text-primary">
+                    5,000+
+                  </div>
+                  <div className="text-caption font-caption text-on-surface-variant uppercase">
+                    Partner Farmers
+                  </div>
                 </div>
               </div>
             </div>
@@ -64,37 +95,74 @@ export default function AboutPage() {
       <section className="bg-surface-container-low py-xl">
         <div className="max-w-[1280px] mx-auto px-6">
           <div className="text-center mb-16">
-            <h2 className="text-headline-lg font-headline-lg text-on-surface">Built on Earth, Optimized by Tech</h2>
+            <h2 className="text-headline-lg font-headline-lg text-on-surface">
+              Built on Earth, Optimized by Tech
+            </h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Value 1 */}
             <div className="bg-white p-8 rounded-xl border border-outline-variant/20 soil-shadow flex flex-col justify-between">
               <div>
-                <span className="material-symbols-outlined text-primary text-4xl mb-6" data-icon="eco">eco</span>
-                <h3 className="text-headline-md font-headline-md mb-4">Precision Ecology</h3>
-                <p className="text-body-md font-body-md text-on-surface-variant">We use satellite imagery and soil sensors to help farmers minimize water waste and maximize nutrient efficiency.</p>
+                <span
+                  className="material-symbols-outlined text-primary text-4xl mb-6"
+                  data-icon="eco"
+                >
+                  eco
+                </span>
+                <h3 className="text-headline-md font-headline-md mb-4">
+                  Precision Ecology
+                </h3>
+                <p className="text-body-md font-body-md text-on-surface-variant">
+                  We use satellite imagery and soil sensors to help farmers
+                  minimize water waste and maximize nutrient efficiency.
+                </p>
               </div>
               <div className="mt-8 pt-8 border-t border-slate-100">
-                <span className="text-caption font-caption text-primary uppercase">Sustainability First</span>
+                <span className="text-caption font-caption text-primary uppercase">
+                  Sustainability First
+                </span>
               </div>
             </div>
 
             {/* Value 2 (Large Middle) */}
             <div className="bg-primary p-8 rounded-xl text-white md:col-span-1 flex flex-col justify-center items-center text-center">
-              <span className="material-symbols-outlined text-6xl mb-6 text-white" data-icon="handshake" style={{ fontVariationSettings: "'FILL' 1" }}>handshake</span>
-              <h3 className="text-headline-md font-headline-md mb-4">Fair Trade Logic</h3>
-              <p className="text-body-md font-body-md opacity-90">By removing unnecessary middlemen, we return 30% more value directly to the farmers&apos; pockets.</p>
+              <span
+                className="material-symbols-outlined text-6xl mb-6 text-white"
+                data-icon="handshake"
+                style={{ fontVariationSettings: "'FILL' 1" }}
+              >
+                handshake
+              </span>
+              <h3 className="text-headline-md font-headline-md mb-4">
+                Fair Trade Logic
+              </h3>
+              <p className="text-body-md font-body-md opacity-90">
+                By removing unnecessary middlemen, we return 30% more value
+                directly to the farmers&apos; pockets.
+              </p>
             </div>
 
             {/* Value 3 */}
             <div className="bg-white p-8 rounded-xl border border-outline-variant/20 soil-shadow flex flex-col justify-between">
               <div>
-                <span className="material-symbols-outlined text-primary text-4xl mb-6" data-icon="local_shipping">local_shipping</span>
-                <h3 className="text-headline-md font-headline-md mb-4">Rapid Harvest</h3>
-                <p className="text-body-md font-body-md text-on-surface-variant">Our cold-chain logistics ensure crops reach urban markets within 24 hours of being picked from the soil.</p>
+                <span
+                  className="material-symbols-outlined text-primary text-4xl mb-6"
+                  data-icon="local_shipping"
+                >
+                  local_shipping
+                </span>
+                <h3 className="text-headline-md font-headline-md mb-4">
+                  Rapid Harvest
+                </h3>
+                <p className="text-body-md font-body-md text-on-surface-variant">
+                  Our cold-chain logistics ensure crops reach urban markets
+                  within 24 hours of being picked from the soil.
+                </p>
               </div>
               <div className="mt-8 pt-8 border-t border-slate-100">
-                <span className="text-caption font-caption text-primary uppercase">Zero Waste Goal</span>
+                <span className="text-caption font-caption text-primary uppercase">
+                  Zero Waste Goal
+                </span>
               </div>
             </div>
           </div>
@@ -114,8 +182,14 @@ export default function AboutPage() {
                 />
               </div>
               <div className="bg-surface-container-high p-8 rounded-xl">
-                <h3 className="text-headline-md font-headline-md text-primary mb-4">Empowering Generations</h3>
-                <p className="text-body-md font-body-md text-on-surface-variant">Our mission is to make farming a prestigious and profitable career once again, attracting the next generation of agricultural innovators.</p>
+                <h3 className="text-headline-md font-headline-md text-primary mb-4">
+                  Empowering Generations
+                </h3>
+                <p className="text-body-md font-body-md text-on-surface-variant">
+                  Our mission is to make farming a prestigious and profitable
+                  career once again, attracting the next generation of
+                  agricultural innovators.
+                </p>
               </div>
             </div>
             <div className="aspect-[4/5] rounded-xl overflow-hidden soil-shadow">
@@ -132,11 +206,20 @@ export default function AboutPage() {
       {/* CTA Section */}
       <section className="bg-primary py-xl text-center px-6">
         <div className="max-w-2xl mx-auto">
-          <h2 className="text-headline-lg font-headline-lg text-white mb-6">Join the Agricultural Revolution</h2>
-          <p className="text-body-lg font-body-lg text-white/80 mb-10">Whether you are a farmer looking for better markets or a stakeholder in food security, there is a place for you at KIZ FARM.</p>
+          <h2 className="text-headline-lg font-headline-lg text-white mb-6">
+            Join the Agricultural Revolution
+          </h2>
+          <p className="text-body-lg font-body-lg text-white/80 mb-10">
+            Whether you are a farmer looking for better markets or a stakeholder
+            in food security, there is a place for you at KIZ FARM.
+          </p>
           <div className="flex flex-wrap justify-center gap-4">
-            <button className="px-8 py-4 rounded-lg bg-white text-primary font-bold text-lg hover:bg-slate-50 transition-all active:scale-95">Become a Farmer</button>
-            <button className="px-8 py-4 rounded-lg border-2 border-white text-white font-bold text-lg hover:bg-white/10 transition-all active:scale-95">View Products</button>
+            <button className="px-8 py-4 rounded-lg bg-white text-primary font-bold text-lg hover:bg-slate-50 transition-all active:scale-95">
+              Become a Farmer
+            </button>
+            <button className="px-8 py-4 rounded-lg border-2 border-white text-white font-bold text-lg hover:bg-white/10 transition-all active:scale-95">
+              View Products
+            </button>
           </div>
         </div>
       </section>

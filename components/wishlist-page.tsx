@@ -9,7 +9,7 @@ export default function WishlistPage() {
       <header className="bg-white dark:bg-zinc-950 border-b border-gray-200 dark:border-zinc-800 fixed top-0 z-50 w-full">
         <div className="flex justify-between items-center w-full px-6 py-3 h-16 max-w-[1440px] mx-auto">
           <div className="flex items-center gap-3">
-            <img alt="KIZ FARM Logo" className="h-8 w-auto" data-alt="Official KIZ FARM logo featuring a large green 'K' with a red swoosh and the text 'KIZ FARM KIZ EMPIREX'" src="https://lh3.googleusercontent.com/aida/ADBb0uj23GL1yyohDEuVyudjCde9xNopFZpHCGNijVRI7_HJybbUQd0SFj0Z-XhpQWQnOfiSkEmJWn9d8fKlJFq0qsc3mZlPIrdE4vjs6GDC6u2ke-vkWWQD5xodJ0YjKCA3slbcuEcGZNXYT7Qq_sSEX2IpzueZh-7FgDLuKZT82snUxkiQCv4D4HmN47B9ejnDhm2YojkfYBHAbmSLAQqdHDhiY56I2jeR3l3jAXenLOwCeQTqfgfBawBRJEC9pIKxysbLNjgbJdsM5g" />
+            <img alt="KIZ FARM Logo" className="h-8 w-auto" data-alt="Official KIZ FARM logo" src="/logo.jpeg" />
             <span className="font-inter antialiased text-sm font-medium text-green-800 dark:text-green-500 uppercase tracking-widest md:hidden">KIZ FARM</span>
           </div>
           <div className="hidden md:flex items-center gap-8">
@@ -199,26 +199,6 @@ export default function WishlistPage() {
           </div>
         </div>
       </main>
-
-      {/* BottomNavBar (Mobile only) */}
-      <nav className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center bg-white dark:bg-zinc-950 h-20 pb-safe md:hidden border-t border-gray-100 dark:border-zinc-800 shadow-[0_-10px_30px_rgba(27,109,36,0.05)]">
-        <button className="flex flex-col items-center justify-center text-gray-400 dark:text-zinc-500 p-2 hover:text-[#1B6D24] dark:hover:text-green-400 transition-colors active:scale-90 duration-200">
-          <span className="material-symbols-outlined" data-icon="home">home</span>
-          <span className="font-inter text-[10px] font-semibold uppercase tracking-wider mt-1">Home</span>
-        </button>
-        <button className="flex flex-col items-center justify-center text-[#1B6D24] dark:text-green-500 p-2 hover:text-[#1B6D24] dark:hover:text-green-400 transition-colors active:scale-90 duration-200">
-          <span className="material-symbols-outlined" data-icon="storefront">storefront</span>
-          <span className="font-inter text-[10px] font-semibold uppercase tracking-wider mt-1">Market</span>
-        </button>
-        <button className="flex flex-col items-center justify-center text-gray-400 dark:text-zinc-500 p-2 hover:text-[#1B6D24] dark:hover:text-green-400 transition-colors active:scale-90 duration-200">
-          <span className="material-symbols-outlined" data-icon="shopping_bag">shopping_bag</span>
-          <span className="font-inter text-[10px] font-semibold uppercase tracking-wider mt-1">Orders</span>
-        </button>
-        <button className="flex flex-col items-center justify-center text-gray-400 dark:text-zinc-500 p-2 hover:text-[#1B6D24] dark:hover:text-green-400 transition-colors active:scale-90 duration-200">
-          <span className="material-symbols-outlined" data-icon="person">person</span>
-          <span className="font-inter text-[10px] font-semibold uppercase tracking-wider mt-1">Profile</span>
-        </button>
-      </nav>
     </>
   );
 }

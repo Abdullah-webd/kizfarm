@@ -10,7 +10,7 @@ export default function SearchResultsPage() {
         <div className="flex justify-between items-center px-6 h-16 w-full max-w-[1440px] mx-auto">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full flex items-center justify-center overflow-hidden bg-white">
-              <img alt="KIZ FARM Official Logo" className="w-full h-full object-contain" src="https://lh3.googleusercontent.com/aida/ADBb0uj23GL1yyohDEuVyudjCde9xNopFZpHCGNijVRI7_HJybbUQd0SFj0Z-XhpQWQnOfiSkEmJWn9d8fKlJFq0qsc3mZlPIrdE4vjs6GDC6u2ke-vkWWQD5xodJ0YjKCA3slbcuEcGZNXYT7Qq_sSEX2IpzueZh-7FgDLuKZT82snUxkiQCv4D4HmN47B9ejnDhm2YojkfYBHAbmSLAQqdHDhiY56I2jeR3l3jAXenLOwCeQTqfgfBawBRJEC9pIKxysbLNjgbJdsM5g" />
+              <img alt="KIZ FARM Official Logo" className="w-full h-full object-contain" src="/logo.jpeg" />
             </div>
             <h1 className="text-xl font-extrabold tracking-tight text-[#1B6D24] font-['Inter'] antialiased">KIZ FARM</h1>
           </div>
@@ -246,26 +246,6 @@ export default function SearchResultsPage() {
           </button>
         </div>
       </main>
-
-      {/* BottomNavBar */}
-      <nav className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center h-20 px-2 bg-white/80 backdrop-blur-md border-t border-gray-200 dark:border-gray-800 shadow-lg dark:shadow-none">
-        <a className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 px-4 py-1 hover:text-[#1B6D24] transition-all active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined">home</span>
-          <span className="font-['Inter'] text-[12px] font-semibold">Home</span>
-        </a>
-        <a className="flex flex-col items-center justify-center text-[#1B6D24] bg-green-50 dark:bg-green-900/20 rounded-xl px-4 py-1 transition-all active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined" style={{ fontVariationSettings: "'FILL' 1" }}>storefront</span>
-          <span className="font-['Inter'] text-[12px] font-semibold">Market</span>
-        </a>
-        <a className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 px-4 py-1 hover:text-[#1B6D24] transition-all active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined">receipt_long</span>
-          <span className="font-['Inter'] text-[12px] font-semibold">Orders</span>
-        </a>
-        <a className="flex flex-col items-center justify-center text-gray-400 dark:text-gray-500 px-4 py-1 hover:text-[#1B6D24] transition-all active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined">person</span>
-          <span className="font-['Inter'] text-[12px] font-semibold">Profile</span>
-        </a>
-      </nav>
     </>
   );
 }

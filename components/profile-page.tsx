@@ -1,22 +1,150 @@
 "use client"
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+
+interface ProfileData {
+  name: string;
+  email: string;
+  phone: string;
+  address: string;
+  city: string;
+  state: string;
+  country: string;
+  profileImage?: string;
+  farmName?: string;
+  farmType?: string;
+  location?: string;
+}
 
 export default function ProfilePage() {
+  const [formData, setFormData] = useState<ProfileData>({
+    name: '',
+    email: '',
+    phone: '',
+    address: '',
+    city: '',
+    state: '',
+    country: '',
+  });
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+  const [messageType, setMessageType] = useState<'success' | 'error'>('success');
+  const [isFarmer, setIsFarmer] = useState(false);
+
+  useEffect(() => {
+    fetchProfile();
+  }, []);
+
+  const fetchProfile = async () => {
+    try {
+      const token = localStorage.getItem('kizfarm_token');
+      
+      // Try farmer endpoint first
+      let res = await fetch(`${API_URL}/farmer/profile`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.profile) {
+          setIsFarmer(true);
+          setFormData({
+            name: data.profile.user?.name || '',
+            email: data.profile.user?.email || '',
+            phone: data.profile.user?.phone || '',
+            address: data.profile.user?.address || '',
+            city: data.profile.user?.city || '',
+            state: data.profile.user?.state || '',
+            country: data.profile.user?.country || '',
+            farmName: data.profile.farmer?.farmName || '',
+            farmType: data.profile.farmer?.farmType || '',
+            location: data.profile.farmer?.location || '',
+          });
+        }
+      } else {
+        // Try buyer endpoint
+        res = await fetch(`${API_URL}/buyer/profile`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.profile) {
+            setFormData({
+              name: data.profile.name || '',
+              email: data.profile.email || '',
+              phone: data.profile.phone || '',
+              address: data.profile.address || '',
+              city: data.profile.city || '',
+              state: data.profile.state || '',
+              country: data.profile.country || '',
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Fetch profile failed:', err);
+      setMessage('Failed to load profile');
+      setMessageType('error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setMessage('');
+
+    try {
+      const token = localStorage.getItem('kizfarm_token');
+      const endpoint = isFarmer ? '/farmer/profile' : '/buyer/profile';
+      
+      const res = await fetch(`${API_URL}${endpoint}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(formData)
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setMessageType('success');
+        setMessage('Profile updated successfully!');
+      } else {
+        setMessageType('error');
+        setMessage(data.error || 'Failed to update profile');
+      }
+    } catch (err) {
+      setMessageType('error');
+      setMessage('Network error');
+      console.error('Update failed:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <span className="material-symbols-outlined animate-spin">autorenew</span>
+        <span className="ml-2">Loading profile...</span>
+      </div>
+    );
+  }
+
   return (
     <>
       {/* TopAppBar */}
       <header className="bg-white dark:bg-zinc-950 border-b border-gray-200 dark:border-zinc-800 shadow-none flex justify-between items-center w-full px-6 py-3 h-16 sticky top-0 z-50">
         <div className="flex items-center gap-3">
-          <img alt="KIZ FARM Logo" className="h-10 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/ADBb0uj23GL1yyohDEuVyudjCde9xNopFZpHCGNijVRI7_HJybbUQd0SFj0Z-XhpQWQnOfiSkEmJWn9d8fKlJFq0qsc3mZlPIrdE4vjs6GDC6u2ke-vkWWQD5xodJ0YjKCA3slbcuEcGZNXYT7Qq_sSEX2IpzueZh-7FgDLuKZT82snUxkiQCv4D4HmN47B9ejnDhm2YojkfYBHAbmSLAQqdHDhiY56I2jeR3l3jAXenLOwCeQTqfgfBawBRJEC9pIKxysbLNjgbJdsM5g" />
-        </div>
-        <div className="flex items-center gap-4">
-          <button className="text-gray-500 dark:text-zinc-400 hover:opacity-80 transition-opacity active:scale-95 duration-150">
-            <span className="material-symbols-outlined" data-icon="notifications">notifications</span>
-          </button>
-          <div className="w-8 h-8 rounded-full overflow-hidden border border-outline-variant">
-            <img className="w-full h-full object-cover" data-alt="professional headshot of a smiling farm manager in natural outdoor lighting with soft green background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD2JT5EBI9r488gdA45KluUg1RAiDim0rPPR6OJn8mb3ruL6ydhuJmYY817nGysp9H8P4PKE5oSD4y91ycmMWj3u-whGorBw6WejBIplzSr7C5-tx7TZ-ULcMe6l0aBoEIhsx_KCjcf1CGCuLs6quLkeACMFDkaIsmFWtl2hYsfrNE2gqlimtN4aoeEDquQ4h2YYuwcXVQHzmV0DtrFH4hbTyNJzI2VUO7mab3yrtLGSPAYc-OWRbIOVtqJiz8uXX1Lyz5Bdyu48nE" />
-          </div>
+          <img alt="KIZ FARM Logo" className="h-10 w-auto object-contain" src="/logo.jpeg" />
         </div>
       </header>
 
@@ -25,40 +153,36 @@ export default function ProfilePage() {
           {/* Header Section */}
           <div className="mb-lg border-b border-gray-100 pb-md">
             <h1 className="font-headline-lg text-headline-lg text-on-surface mb-xs">Edit Profile</h1>
-            <p className="font-body-md text-body-md text-secondary">Manage your personal information and farm identity.</p>
+            <p className="font-body-md text-body-md text-secondary">Manage your personal information {isFarmer && 'and farm details'}.</p>
           </div>
 
-          {/* Profile Form Content */}
-          <form className="space-y-xl">
-            {/* Profile Image Upload */}
-            <section className="flex flex-col md:flex-row items-center gap-md p-md bg-surface-container-low rounded-xl border border-gray-100">
-              <div className="relative group">
-                <div className="w-32 h-32 rounded-full overflow-hidden border-4 border-white shadow-sm">
-                  <img className="w-full h-full object-cover" data-alt="Close up of a person smiling, farm setting, natural warm lighting, high quality portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAtfslUBiRZGg66PfwLA8EaerHamr7hfVETKkUrBUCOoLo0T6-9F3RF8rJHo_afDxgmIdAnnVSsDIlirlfGqevO8NA9wjqRZrXYH7tgvOq4X0uCaD02CeIRLWxEQnhFzFiOHpAZXG8MJMuYYLQ0uu44jHzhX66hn8drZDNr_7VKaX2CPLR-wf78RPgfjJaYE_hnimDWtYEq6UrWGU1Zb-_LsnqDbLVqJhF6YpaBxPHa6QOPj_glFBIQLKBPAwOHu6LO6hbZ99_W7nE" />
-                </div>
-                <label className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" htmlFor="avatar-upload">
-                  <span className="material-symbols-outlined" data-icon="photo_camera">photo_camera</span>
-                </label>
-                <input accept="image/*" className="hidden" id="avatar-upload" type="file" />
-              </div>
-              <div className="flex-grow text-center md:text-left">
-                <h3 className="font-label-sm text-label-sm text-on-surface mb-xs">Profile Picture</h3>
-                <p className="font-body-md text-label-xs text-secondary mb-md">JPG, GIF or PNG. Max size of 2MB.</p>
-                <div className="flex gap-sm justify-center md:justify-start">
-                  <button className="px-md py-2 border border-primary text-primary rounded-lg font-label-sm hover:bg-primary/5 transition-colors" type="button">Upload New</button>
-                  <button className="px-md py-2 text-error font-label-sm hover:underline" type="button">Remove</button>
-                </div>
-              </div>
-            </section>
+          {/* Message */}
+          {message && (
+            <div className={`mb-4 p-4 rounded-lg ${
+              messageType === 'success'
+                ? 'bg-green-50 text-green-800 border border-green-200'
+                : 'bg-red-50 text-red-800 border border-red-200'
+            }`}>
+              {message}
+            </div>
+          )}
 
-            {/* Input Fields Grid */}
+          {/* Profile Form Content */}
+          <form onSubmit={handleSubmit} className="space-y-xl">
+            {/* Basic Information Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-md">
               {/* Full Name */}
               <div className="flex flex-col gap-xs md:col-span-2">
-                <label className="font-label-sm text-label-sm text-on-surface" htmlFor="full-name">Full Name</label>
+                <label className="font-label-sm text-label-sm text-on-surface" htmlFor="name">Full Name</label>
                 <div className="relative">
-                  <input className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none" id="full-name" type="text" defaultValue="Marcus Chen" />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-outline-variant material-symbols-outlined" data-icon="person">person</span>
+                  <input
+                    className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none"
+                    id="name"
+                    type="text"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-outline-variant material-symbols-outlined">person</span>
                 </div>
               </div>
 
@@ -66,76 +190,163 @@ export default function ProfilePage() {
               <div className="flex flex-col gap-xs">
                 <label className="font-label-sm text-label-sm text-on-surface" htmlFor="email">Email Address</label>
                 <div className="relative">
-                  <input className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none" id="email" type="email" defaultValue="m.chen@kizfarm.ag" />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-outline-variant material-symbols-outlined" data-icon="mail">mail</span>
+                  <input
+                    className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none"
+                    id="email"
+                    type="email"
+                    value={formData.email}
+                    disabled
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-outline-variant material-symbols-outlined">mail</span>
                 </div>
+                <p className="text-xs text-gray-500">Email cannot be changed</p>
               </div>
 
               {/* Phone Number */}
               <div className="flex flex-col gap-xs">
                 <label className="font-label-sm text-label-sm text-on-surface" htmlFor="phone">Phone Number</label>
                 <div className="relative">
-                  <input className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none" id="phone" type="tel" defaultValue="+1 (555) 012-3456" />
-                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-outline-variant material-symbols-outlined" data-icon="call">call</span>
+                  <input
+                    className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none"
+                    id="phone"
+                    type="tel"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-outline-variant material-symbols-outlined">call</span>
                 </div>
               </div>
+            </div>
 
-              {/* Farm Role */}
-              <div className="flex flex-col gap-xs">
-                <label className="font-label-sm text-label-sm text-on-surface" htmlFor="role">Farm Role</label>
-                <select className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none appearance-none" id="role">
-                  <option>Farm Owner</option>
-                  <option>Operations Manager</option>
-                  <option>Agronomist</option>
-                  <option>Technician</option>
-                </select>
-              </div>
+            {/* Address Information */}
+            <div className="border-t border-gray-100 pt-md">
+              <h3 className="font-label-sm text-label-sm text-on-surface mb-md">Address Information</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-md">
+                {/* Street Address */}
+                <div className="flex flex-col gap-xs md:col-span-2">
+                  <label className="font-label-sm text-label-sm text-on-surface" htmlFor="address">Street Address</label>
+                  <input
+                    className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none"
+                    id="address"
+                    type="text"
+                    value={formData.address}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    placeholder="Street address"
+                  />
+                </div>
 
-              {/* Region */}
-              <div className="flex flex-col gap-xs">
-                <label className="font-label-sm text-label-sm text-on-surface" htmlFor="region">Primary Region</label>
-                <input className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none" id="region" type="text" defaultValue="Central Valley, CA" />
+                {/* City */}
+                <div className="flex flex-col gap-xs">
+                  <label className="font-label-sm text-label-sm text-on-surface" htmlFor="city">City</label>
+                  <input
+                    className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none"
+                    id="city"
+                    type="text"
+                    value={formData.city}
+                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                    placeholder="City"
+                  />
+                </div>
+
+                {/* State */}
+                <div className="flex flex-col gap-xs">
+                  <label className="font-label-sm text-label-sm text-on-surface" htmlFor="state">State/Province</label>
+                  <input
+                    className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none"
+                    id="state"
+                    type="text"
+                    value={formData.state}
+                    onChange={(e) => setFormData({ ...formData, state: e.target.value })}
+                    placeholder="State/Province"
+                  />
+                </div>
+
+                {/* Country */}
+                <div className="flex flex-col gap-xs">
+                  <label className="font-label-sm text-label-sm text-on-surface" htmlFor="country">Country</label>
+                  <input
+                    className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none"
+                    id="country"
+                    type="text"
+                    value={formData.country}
+                    onChange={(e) => setFormData({ ...formData, country: e.target.value })}
+                    placeholder="Country"
+                  />
+                </div>
               </div>
             </div>
 
-            {/* Bio / Notes */}
-            <div className="flex flex-col gap-xs">
-              <label className="font-label-sm text-label-sm text-on-surface" htmlFor="bio">Professional Bio</label>
-              <textarea className="w-full p-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none resize-none" id="bio" rows={4} defaultValue="Managing sustainable almond cultivation and soil health optimization for over 15 years."></textarea>
-            </div>
+            {/* Farm Information (Farmer Only) */}
+            {isFarmer && (
+              <div className="border-t border-gray-100 pt-md">
+                <h3 className="font-label-sm text-label-sm text-on-surface mb-md">Farm Information</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-md">
+                  {/* Farm Name */}
+                  <div className="flex flex-col gap-xs md:col-span-2">
+                    <label className="font-label-sm text-label-sm text-on-surface" htmlFor="farmName">Farm Name</label>
+                    <input
+                      className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none"
+                      id="farmName"
+                      type="text"
+                      value={formData.farmName || ''}
+                      onChange={(e) => setFormData({ ...formData, farmName: e.target.value })}
+                      placeholder="Farm name"
+                    />
+                  </div>
 
-            {/* Action Buttons */}
-            <div className="flex flex-col md:flex-row items-center gap-md pt-lg border-t border-gray-100">
-              <button className="w-full md:w-auto h-12 px-xl bg-[#1B6D24] text-white rounded-lg font-label-sm hover:opacity-90 active:scale-95 transition-all shadow-sm" type="submit">
-                Save Changes
+                  {/* Farm Type */}
+                  <div className="flex flex-col gap-xs">
+                    <label className="font-label-sm text-label-sm text-on-surface" htmlFor="farmType">Farm Type</label>
+                    <select
+                      className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none appearance-none"
+                      id="farmType"
+                      value={formData.farmType || ''}
+                      onChange={(e) => setFormData({ ...formData, farmType: e.target.value })}
+                    >
+                      <option value="">Select type</option>
+                      <option value="crops">Crops</option>
+                      <option value="livestock">Livestock</option>
+                      <option value="mixed">Mixed</option>
+                      <option value="aquaculture">Aquaculture</option>
+                    </select>
+                  </div>
+
+                  {/* Farm Location */}
+                  <div className="flex flex-col gap-xs">
+                    <label className="font-label-sm text-label-sm text-on-surface" htmlFor="location">Farm Location</label>
+                    <input
+                      className="w-full h-12 px-md bg-white border border-outline-variant rounded-lg focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all font-body-md outline-none"
+                      id="location"
+                      type="text"
+                      value={formData.location || ''}
+                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                      placeholder="Farm location"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Submit Button */}
+            <div className="flex gap-md pt-md border-t border-gray-100">
+              <button
+                type="submit"
+                disabled={saving}
+                className="px-lg py-2 bg-primary text-white rounded-lg font-label-sm hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                {saving ? 'Saving...' : 'Save Changes'}
               </button>
-              <button className="w-full md:w-auto h-12 px-xl border border-outline text-secondary rounded-lg font-label-sm hover:bg-surface-container transition-all" type="button">
+              <button
+                type="button"
+                onClick={() => fetchProfile()}
+                className="px-lg py-2 border border-outline-variant text-primary rounded-lg font-label-sm hover:bg-primary/5 transition-colors"
+              >
                 Cancel
               </button>
             </div>
           </form>
         </div>
       </main>
-
-      {/* BottomNavBar (Mobile Only) */}
-      <nav className="md:hidden fixed bottom-0 left-0 w-full z-50 flex justify-around items-center bg-white dark:bg-zinc-950 h-20 pb-safe border-t border-gray-100 dark:border-zinc-800 shadow-[0_-10px_30px_rgba(27,109,36,0.05)]">
-        <a className="flex flex-col items-center justify-center text-gray-400 dark:text-zinc-500 p-2 hover:text-[#1B6D24] dark:hover:text-green-400 transition-colors active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined" data-icon="home">home</span>
-          <span className="font-inter text-[10px] font-semibold uppercase tracking-wider">Home</span>
-        </a>
-        <a className="flex flex-col items-center justify-center text-gray-400 dark:text-zinc-500 p-2 hover:text-[#1B6D24] dark:hover:text-green-400 transition-colors active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined" data-icon="storefront">storefront</span>
-          <span className="font-inter text-[10px] font-semibold uppercase tracking-wider">Market</span>
-        </a>
-        <a className="flex flex-col items-center justify-center text-gray-400 dark:text-zinc-500 p-2 hover:text-[#1B6D24] dark:hover:text-green-400 transition-colors active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined" data-icon="shopping_bag">shopping_bag</span>
-          <span className="font-inter text-[10px] font-semibold uppercase tracking-wider">Orders</span>
-        </a>
-        <a className="flex flex-col items-center justify-center text-[#1B6D24] dark:text-green-500 p-2 hover:text-[#1B6D24] dark:hover:text-green-400 transition-colors active:scale-90 duration-200" href="#">
-          <span className="material-symbols-outlined" data-icon="person" style={{ fontVariationSettings: "'FILL' 1" }}>person</span>
-          <span className="font-inter text-[10px] font-semibold uppercase tracking-wider">Profile</span>
-        </a>
-      </nav>
     </>
   );
 }

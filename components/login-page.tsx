@@ -1,15 +1,57 @@
-'use client';
+"use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+  const router = useRouter();
 
+  // redirect away if already authenticated
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const token = localStorage.getItem('kizfarm_token');
+    if (token) router.push('/public/home');
+  }, [router]);
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    console.log('[v0] Login submitted:', { email, password, remember });
+    setError(null);
+    setIsLoading(true);
+    (async () => {
+      try {
+        const res = await fetch(`${API}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Login failed");
+        // save token and user
+        if (data.token) localStorage.setItem("kizfarm_token", data.token);
+        if (data.user)
+          localStorage.setItem("kizfarm_user", JSON.stringify(data.user));
+        // notify sidebar and other listeners in same tab
+        try { window.dispatchEvent(new Event('kizfarm_auth_changed')); } catch(e) {}
+        
+        const role = data.user?.role || "user";
+        if (role === "farmer") {
+          router.push("/farmer/dashboard");
+        } else if (role === "admin") {
+          router.push("/admin/dashboard");
+        } else {
+          router.push("/buyer/dashboard");
+        }
+      } catch (err: any) {
+        setError(err.message || "Login failed");
+      } finally {
+        setIsLoading(false);
+      }
+    })();
   };
 
   return (
@@ -27,8 +69,13 @@ export default function LoginPage() {
           }
         `}</style>
         <div className="bg-white/10 backdrop-blur-md p-lg rounded-xl border border-white/20 max-w-md">
-          <h2 className="font-headline-lg text-white mb-sm">Sustainable Growth starts with Digital Agronomy.</h2>
-          <p className="font-body-md text-white/90">Monitor soil health, crop status, and environmental metrics in real-time with KIZ FARM.</p>
+          <h2 className="font-headline-lg text-white mb-sm">
+            Sustainable Growth starts with Digital Agronomy.
+          </h2>
+          <p className="font-body-md text-white/90">
+            Monitor soil health, crop status, and environmental metrics in
+            real-time with KIZ FARM.
+          </p>
         </div>
       </section>
 
@@ -41,7 +88,9 @@ export default function LoginPage() {
             className="h-24 w-auto mb-xs"
             src="/logo.jpeg"
           />
-          <p className="font-body-md text-on-secondary-container mt-xs">Precision Farming Portal</p>
+          <p className="font-body-md text-on-secondary-container mt-xs">
+            Precision Farming Portal
+          </p>
         </div>
 
         {/* Login Form Container */}
@@ -72,10 +121,16 @@ export default function LoginPage() {
             {/* Password Field */}
             <div className="space-y-xs">
               <div className="flex justify-between items-center">
-                <label className="font-label-sm text-on-surface" htmlFor="password">
+                <label
+                  className="font-label-sm text-on-surface"
+                  htmlFor="password"
+                >
                   Password
                 </label>
-                <a className="font-label-xs text-primary hover:underline transition-all" href="#">
+                <a
+                  className="font-label-xs text-primary hover:underline transition-all"
+                  href="#"
+                >
                   Forgot Password?
                 </a>
               </div>
@@ -105,26 +160,34 @@ export default function LoginPage() {
                 checked={remember}
                 onChange={(e) => setRemember(e.target.checked)}
               />
-              <label className="font-label-sm text-on-surface-variant cursor-pointer" htmlFor="remember">
+              <label
+                className="font-label-sm text-on-surface-variant cursor-pointer"
+                htmlFor="remember"
+              >
                 Keep me logged in
               </label>
             </div>
 
             {/* Primary Action */}
             <button
-              className="w-full h-12 bg-primary-container text-on-primary font-label-sm uppercase tracking-widest rounded-lg hover:brightness-110 active:scale-[0.98] transition-all shadow-sm"
+              className="w-full h-12 bg-primary-container text-on-primary font-label-sm uppercase tracking-widest rounded-lg hover:brightness-110 active:scale-[0.98] transition-all shadow-sm disabled:opacity-60"
               type="submit"
+              disabled={isLoading}
             >
-              Login
+              {isLoading ? "Logging in..." : "Login"}
             </button>
+            {error && <div className="text-sm text-red-600 mt-2">{error}</div>}
           </form>
 
           {/* Alternate Actions */}
           <div className="mt-lg pt-lg border-t border-outline-variant text-center">
             <p className="font-body-md text-on-secondary-container">
-              New to the platform?{' '}
-              <a className="text-primary font-semibold hover:underline" href="#">
-                Contact Administrator
+              New to the platform?{" "}
+              <a
+                className="text-primary font-semibold hover:underline"
+                href="/public/signup"
+              >
+                Sign Up
               </a>
             </p>
           </div>
@@ -132,13 +195,17 @@ export default function LoginPage() {
 
         {/* Footer Compliance */}
         <div className="absolute bottom-base w-full text-center">
-          <p className="font-label-xs text-outline-variant uppercase tracking-widest">© 2024 KIZ FARM. Digital Agronomy.</p>
+          <p className="font-label-xs text-outline-variant uppercase tracking-widest">
+            © 2024 KIZ FARM. Digital Agronomy.
+          </p>
         </div>
       </section>
 
       {/* Visual Decoration */}
       <div className="fixed top-0 right-0 p-lg opacity-10 pointer-events-none hidden lg:block">
-        <span className="material-symbols-outlined text-[120px] text-primary">agriculture</span>
+        <span className="material-symbols-outlined text-[120px] text-primary">
+          agriculture
+        </span>
       </div>
     </main>
   );

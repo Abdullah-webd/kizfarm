@@ -9,7 +9,7 @@ export default function AccessContactPage() {
       <header className="bg-white shadow-sm border-b border-gray-100 sticky top-0 z-50">
         <div className="flex justify-between items-center w-full px-4 h-16 max-w-7xl mx-auto">
           <div className="flex items-center">
-            <img alt="KIZ FARM Official Logo" className="h-12 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/ADBb0ugzYC4-jqxSvxpO-z71bb0GLSnz_-daStJIDb_rNawDmL25axyIiZy8Cqf1UcXvoLZLDeXjPhmjvdKjTxAlrjvjl3HXCUWXUj5nkd-CNJRdE5q0cUnyPeJSBDqfwKp2LBqoAXSOr9rxTHYeYdNtnu7qp_P10cfeet2EPbyN482EHqLb_yukw7jI8RArrUC1lZTB-VHlTnuP22hg4JuRelxxtVa1Qgw4ltrQRNHgV0L1G3laFJ7TF4ZomEhxJ1EQNPEyGr6vd4TvKw" />
+            <img alt="KIZ FARM Official Logo" className="h-12 w-auto object-contain" src="/logo.jpeg" />
           </div>
           <div className="flex items-center gap-4">
             <div className="hidden md:flex gap-6 items-center">

@@ -11,7 +11,7 @@ export default function AddNewTutorPage() {
           <button className="md:hidden p-2 text-slate-600">
             <span className="material-symbols-outlined">menu</span>
           </button>
-          <img alt="KizFarm logo" className="h-8 w-auto" data-alt="A clean and professional corporate logo for an agricultural brand called KIZ FARM. The logo features minimalist organic leaf motifs integrated with modern sans-serif typography in a deep forest green color palette. The aesthetic is grounded and trustworthy, symbolizing sustainable farming practices and technological innovation in the agricultural sector, set against a transparent background." src="https://lh3.googleusercontent.com/aida/ADBb0ugzYC4-jqxSvxpO-z71bb0GLSnz_-daStJIDb_rNawDmL25axyIiZy8Cqf1UcXvoLZLDeXjPhmjvdKjTxAlrjvjl3HXCUWXUj5nkd-CNJRdE5q0cUnyPeJSBDqfwKp2LBqoAXSOr9rxTHYeYdNtnu7qp_P10cfeet2EPbyN482EHqLb_yukw7jI8RArrUC1lZTB-VHlTnuP22hg4JuRelxxtVa1Qgw4ltrQRNHgV0L1G3laFJ7TF4ZomEhxJ1EQNPEyGr6vd4TvKw" />
+          <img alt="KizFarm logo" className="h-8 w-auto" data-alt="A clean and professional corporate logo for an agricultural brand called KIZ FARM. The logo features minimalist organic leaf motifs integrated with modern sans-serif typography in a deep forest green color palette. The aesthetic is grounded and trustworthy, symbolizing sustainable farming practices and technological innovation in the agricultural sector, set against a transparent background." src="/logo.jpeg" />
           <span className="hidden md:block font-h2 text-primary">AgriMarket Admin</span>
         </div>
         <div className="flex items-center gap-sm">

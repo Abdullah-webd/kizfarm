@@ -8,7 +8,7 @@ export default function TransactionListPage() {
       {/* Sidebar Navigation */}
       <aside className="fixed left-0 top-0 h-screen w-[280px] z-50 bg-white border-r border-gray-100 shadow-[1px_0_3px_0_rgba(0,0,0,0.05)] flex flex-col py-6 px-4">
         <div className="mb-10 px-2 flex items-center gap-3">
-          <img alt="KizFarm Logo" className="w-10 h-10 object-contain rounded-lg" src="https://lh3.googleusercontent.com/aida/ADBb0ujvT0foH0KVcUsUv1-X4NT6qkDm-oxoWHPKnV2esAnpEYklq4ts8j8P3_GO0-dXO8ryqMabe9myPDfL0XYeqBDVig2viC4Rij2XdBmivAgOvEtr0hGHDgDKJZ1i38ZtqiD-LoHs4WVWukq8QcifpDJziKXxgrnxclqiEC_kDMK9LVOr0HmGh1xKcZ7krF1tknqWE-DCpzGSaO8Y2JOVQvTR-0-hQxIhA2Oem9ye8FJhDUNqr8nPm5RYcAimG0-7PXqDyqvgpsiJRg" />
+          <img alt="KizFarm Logo" className="w-10 h-10 object-contain rounded-lg" src="/logo.jpeg" />
           <div>
             <h1 className="text-xl font-black tracking-tight text-[#1B6D24]">KizFarm</h1>
             <p className="text-xs text-secondary font-medium uppercase tracking-widest">Admin Console</p>

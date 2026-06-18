@@ -1,236 +1,466 @@
-"use client"
+"use client";
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+
+type UploadKey = "farmerImage" | "validIdImage";
+
+const uploadCopy: Record<UploadKey, { title: string; helper: string; icon: string }> = {
+  farmerImage: {
+    title: "Farmer's Image",
+    helper: "Upload a clear image of yourself for profile verification.",
+    icon: "face",
+  },
+  validIdImage: {
+    title: "Valid ID Image",
+    helper: "Driver's License, Voter's Card, or International Passport.",
+    icon: "badge",
+  },
+};
 
 export default function IdentityVerificationPage() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [farmer, setFarmer] = useState<any>(null);
+  const [farmAddress, setFarmAddress] = useState("");
+  const [previews, setPreviews] = useState<Record<UploadKey, string | null>>({
+    farmerImage: null,
+    validIdImage: null,
+  });
+  const [farmImagePreviews, setFarmImagePreviews] = useState<string[]>([]);
+  const [selectedFiles, setSelectedFiles] = useState<
+    Record<UploadKey, File | null>
+  >({
+    farmerImage: null,
+    validIdImage: null,
+  });
+  const [farmImages, setFarmImages] = useState<File[]>([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  const farmerImageRef = useRef<HTMLInputElement | null>(null);
+  const validIdImageRef = useRef<HTMLInputElement | null>(null);
+  const farmImagesRef = useRef<HTMLInputElement | null>(null);
+
+  const refs: Record<UploadKey, React.RefObject<HTMLInputElement | null>> = {
+    farmerImage: farmerImageRef,
+    validIdImage: validIdImageRef,
+  };
+
+  const getExistingImage = (key: UploadKey) => {
+    if (!farmer) return "";
+    if (key === "farmerImage") return farmer.farmerImageUrl || farmer.selfieUrl || "";
+    return farmer.validIdImageUrl || farmer.govIdUrl || "";
+  };
+
+  const getExistingFarmImages = () => {
+    if (!farmer) return [];
+    if (Array.isArray(farmer.farmImageUrls) && farmer.farmImageUrls.length > 0) {
+      return farmer.farmImageUrls;
+    }
+    return farmer.farmImageUrl ? [farmer.farmImageUrl] : [];
+  };
+
+  const fetchFarmerStatus = async () => {
+    const token =
+      typeof window !== "undefined"
+        ? localStorage.getItem("kizfarm_token")
+        : null;
+    if (!token) {
+      router.push("/public/login");
+      return;
+    }
+    try {
+      const res = await fetch("http://localhost:4000/farmer/status", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!data?.farmer) {
+        router.push("/farmer/become");
+        return;
+      }
+      setFarmer(data.farmer);
+      setFarmAddress(data.farmer?.farmAddress || "");
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    setLoading(true);
+    fetchFarmerStatus();
+  }, [router]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(previews).forEach((preview) => {
+        if (preview) URL.revokeObjectURL(preview);
+      });
+      farmImagePreviews.forEach((preview) => URL.revokeObjectURL(preview));
+    };
+  }, [previews, farmImagePreviews]);
+
+  const handleFileChange =
+    (key: UploadKey) => (e: React.ChangeEvent<HTMLInputElement>) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const file = e.target.files?.[0] || null;
+      setSelectedFiles((current) => ({ ...current, [key]: file }));
+      setPreviews((current) => {
+        if (current[key]) URL.revokeObjectURL(current[key] as string);
+        return {
+          ...current,
+          [key]: file && file.type.startsWith("image/")
+            ? URL.createObjectURL(file)
+            : null,
+        };
+      });
+    };
+
+  const handleFarmImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const files = Array.from(e.target.files || []).filter((file) =>
+      file.type.startsWith("image/"),
+    );
+
+    if (files.length > 0 && files.length !== 5) {
+      alert("Please select exactly 5 clear farm images.");
+    }
+
+    setFarmImages(files);
+    setFarmImagePreviews((current) => {
+      current.forEach((preview) => URL.revokeObjectURL(preview));
+      return files.map((file) => URL.createObjectURL(file));
+    });
+  };
+
+  const allowEdit =
+    !farmer || farmer.status === "draft" || farmer.status === "rejected";
+
+  const handleSubmit = async (e?: React.SyntheticEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+    if (!farmer) return;
+    if (!allowEdit) return;
+    const token = localStorage.getItem("kizfarm_token");
+    if (!token) return router.push("/public/login");
+
+    const farmerImage = selectedFiles.farmerImage;
+    const validIdImage = selectedFiles.validIdImage;
+    const existingFarmImages = getExistingFarmImages();
+
+    if (!farmAddress.trim()) {
+      alert("Farm address is required.");
+      return;
+    }
+    if (!farmerImage && !getExistingImage("farmerImage")) {
+      alert("Farmer's image is required.");
+      return;
+    }
+    if (!validIdImage && !getExistingImage("validIdImage")) {
+      alert("Valid ID image is required.");
+      return;
+    }
+    if (farmImages.length > 0 && farmImages.length !== 5) {
+      alert("Please upload exactly 5 clear farm images.");
+      return;
+    }
+    if (farmImages.length === 0 && existingFarmImages.length !== 5) {
+      alert("Please upload exactly 5 clear farm images.");
+      return;
+    }
+
+    const form = new FormData();
+    form.append("farmAddress", farmAddress.trim());
+    if (farmerImage) form.append("farmerImage", farmerImage);
+    if (validIdImage) form.append("validIdImage", validIdImage);
+    farmImages.forEach((farmImage) => form.append("farmImages", farmImage));
+
+    setSubmitting(true);
+    try {
+      const res = await fetch("http://localhost:4000/farmer/verify", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      setFarmer(data.farmer);
+    } catch (err) {
+      alert(String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (loading) {
+    return <div className="pt-32 text-center">Loading verification...</div>;
+  }
+
+  const statusLabel = farmer?.status
+    ? farmer.status.charAt(0).toUpperCase() + farmer.status.slice(1)
+    : "Draft";
+
   return (
-    <div className="bg-white font-body-md text-on-surface">
-      {/* TopAppBar */}
+    <div className="bg-white font-body-md text-on-surface min-h-screen">
       <header className="sticky top-0 z-50 flex items-center justify-between px-4 h-16 w-full bg-white/90 backdrop-blur-md border-b border-zinc-200">
-        <div className="flex items-center gap-4">
-          <button className="p-2 text-zinc-600 hover:bg-zinc-50 transition-colors active:scale-95 duration-150 rounded-lg">
-            <span className="material-symbols-outlined" data-icon="menu">menu</span>
-          </button>
-          <div className="flex items-center gap-2">
-            <img alt="KIZ FARM logo" className="h-8 w-auto" data-alt="KIZ FARM official logo featuring a large green K with red and green swooshes" src="https://lh3.googleusercontent.com/aida/ADBb0ujvT0foH0KVcUsUv1-X4NT6qkDm-oxoWHPKnV2esAnpEYklq4ts8j8P3_GO0-dXO8ryqMabe9myPDfL0XYeqBDVig2viC4Rij2XdBmivAgOvEtr0hGHDgDKJZ1i38ZtqiD-LoHs4WVWukq8QcifpDJziKXxgrnxclqiEC_kDMK9LVOr0HmGh1xKcZ7krF1tknqWE-DCpzGSaO8Y2JOVQvTR-0-hQxIhA2Oem9ye8FJhDUNqr8nPm5RYcAimG0-7PXqDyqvgpsiJRg" />
-            <span className="text-lg font-black tracking-tighter text-[#1B6D24] uppercase">KIZ FARM</span>
-          </div>
-        </div>
         <div className="flex items-center gap-2">
-          <button className="p-2 text-zinc-600 hover:bg-zinc-50 transition-colors active:scale-95 duration-150 rounded-lg relative">
-            <span className="material-symbols-outlined" data-icon="notifications">notifications</span>
-            <span className="absolute top-2 right-2 w-2 h-2 bg-error rounded-full border-2 border-white"></span>
-          </button>
+          <img
+            alt="KIZ FARM logo"
+            className="h-8 w-auto"
+            src="/logo.jpeg"
+          />
+          <span className="text-lg font-black tracking-tighter text-[#1B6D24] uppercase">
+            KIZ FARM
+          </span>
+        </div>
+        <div className="flex items-center gap-3 px-4 py-2 rounded-xl border">
+          <span
+            className={`material-symbols-outlined ${
+              farmer?.status === "approved"
+                ? "text-emerald-700"
+                : farmer?.status === "rejected"
+                  ? "text-red-700"
+                  : "text-amber-700"
+            }`}
+          >
+            {farmer?.status === "approved"
+              ? "verified"
+              : farmer?.status === "rejected"
+                ? "error"
+                : "pending"}
+          </span>
+          <div className="flex flex-col">
+            <span className="text-[11px] text-zinc-500 uppercase">
+              Current Status
+            </span>
+            <span className="text-sm font-bold">{statusLabel}</span>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-[1440px] mx-auto min-h-[calc(100vh-64px)] p-6 md:p-margin bg-white">
-        {/* Verification Header Section */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between mb-lg gap-md">
+      <main className="max-w-[1180px] mx-auto min-h-[calc(100vh-64px)] p-6 md:p-margin">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-md mb-lg">
           <div>
             <nav className="flex items-center gap-2 text-zinc-400 mb-2">
-              <span className="text-label-sm font-label-sm uppercase">Account</span>
-              <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-              <span className="text-label-sm font-label-sm uppercase text-primary">Verification</span>
+              <span className="text-label-sm font-label-sm uppercase">
+                Account
+              </span>
+              <span className="material-symbols-outlined text-[16px]">
+                chevron_right
+              </span>
+              <span className="text-label-sm font-label-sm uppercase text-primary">
+                Verification
+              </span>
             </nav>
-            <h1 className="text-headline-lg font-headline-lg text-on-surface">Identity Verification</h1>
-            <p className="text-body-lg font-body-lg text-zinc-500 max-w-2xl">Complete your profile to unlock full marketplace features and ensure secure transactions within the KIZ FARM ecosystem.</p>
-          </div>
-          {/* Status Badge */}
-          <div className="flex items-center gap-3 px-4 py-2 bg-tertiary-fixed rounded-xl border border-tertiary-container/20">
-            <span className="material-symbols-outlined text-tertiary" data-icon="pending">pending</span>
-            <div className="flex flex-col">
-              <span className="text-label-xs font-label-xs text-on-tertiary-fixed-variant uppercase">Current Status</span>
-              <span className="text-label-sm font-label-sm font-bold text-tertiary">Pending verification</span>
-            </div>
+            <h1 className="text-headline-lg font-headline-lg">
+              Identity Verification
+            </h1>
+            <p className="text-body-lg text-zinc-500 max-w-2xl">
+              Submit your farm address, personal image, valid ID image, and 5
+              clear farm proof images for admin review.
+            </p>
           </div>
         </div>
 
-        {/* Verification Canvas: Asymmetric Layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
-          {/* Left Column: Form Fields & Uploads (8 cols) */}
-          <div className="lg:col-span-8 space-y-md">
-            {/* Identification Numbers Card */}
-            <section className="bg-white border border-[#E5E7EB] rounded-xl p-md">
-              <div className="flex items-center gap-2 mb-md">
-                <span className="material-symbols-outlined text-primary" data-icon="fingerprint">fingerprint</span>
-                <h2 className="text-headline-md font-headline-md">Identification Numbers</h2>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-md">
-                <div className="space-y-2">
-                  <label className="text-label-sm font-label-sm text-on-surface-variant uppercase">Bank Verification Number (BVN)</label>
-                  <div className="relative">
-                    <input className="w-full h-12 bg-white border border-zinc-200 rounded-lg px-4 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none" placeholder="222********" type="password" />
-                    <button className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-primary">
-                      <span className="material-symbols-outlined" data-icon="visibility">visibility</span>
-                    </button>
-                  </div>
-                  <p className="text-label-xs font-label-xs text-zinc-400">Used for financial identity only. Secured by 256-bit encryption.</p>
-                </div>
-                <div className="space-y-2">
-                  <label className="text-label-sm font-label-sm text-on-surface-variant uppercase">National Identity Number (NIN)</label>
-                  <input className="w-full h-12 bg-white border border-zinc-200 rounded-lg px-4 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none" placeholder="Enter 11-digit NIN" type="text" />
-                  <p className="text-label-xs font-label-xs text-zinc-400">Your official Nigerian identity record.</p>
-                </div>
-              </div>
-            </section>
-
-            {/* Documents Grid (Bento Style) */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-gutter">
-              {/* Government ID Upload */}
-              <div className="bg-white border border-[#E5E7EB] rounded-xl p-md flex flex-col group cursor-pointer hover:border-primary transition-colors">
-                <div className="flex justify-between items-start mb-md">
-                  <div className="p-3 bg-green-50 rounded-xl text-primary">
-                    <span className="material-symbols-outlined" data-icon="badge">badge</span>
-                  </div>
-                  <span className="text-label-xs font-label-xs text-zinc-400 uppercase">Step 02</span>
-                </div>
-                <h3 className="text-headline-md font-headline-md mb-2">Government ID</h3>
-                <p className="text-body-md text-zinc-500 mb-md">Upload a clear photo of your International Passport, Voter's Card, or Driver's License.</p>
-                <div className="flex-grow flex flex-col items-center justify-center border-2 border-dashed border-zinc-200 rounded-lg p-lg bg-zinc-50/50 group-hover:bg-green-50/20 transition-all">
-                  <span className="material-symbols-outlined text-4xl text-zinc-300 mb-2" data-icon="cloud_upload">cloud_upload</span>
-                  <span className="text-label-sm font-label-sm text-zinc-600">Drag file or click to browse</span>
-                  <span className="text-label-xs font-label-xs text-zinc-400 mt-1">PNG, JPG up to 10MB</span>
-                </div>
-              </div>
-
-              {/* Selfie Verification */}
-              <div className="bg-white border border-[#E5E7EB] rounded-xl p-md flex flex-col group cursor-pointer hover:border-primary transition-colors">
-                <div className="flex justify-between items-start mb-md">
-                  <div className="p-3 bg-green-50 rounded-xl text-primary">
-                    <span className="material-symbols-outlined" data-icon="face">face</span>
-                  </div>
-                  <span className="text-label-xs font-label-xs text-zinc-400 uppercase">Step 03</span>
-                </div>
-                <h3 className="text-headline-md font-headline-md mb-2">Live Selfie</h3>
-                <p className="text-body-md text-zinc-500 mb-md">Take a clear photo of yourself looking directly at the camera with neutral lighting.</p>
-                <div className="flex-grow flex flex-col items-center justify-center border-2 border-dashed border-zinc-200 rounded-lg p-lg bg-zinc-50/50 group-hover:bg-green-50/20 transition-all">
-                  <div className="relative w-24 h-24 rounded-full overflow-hidden mb-4 border-2 border-white shadow-sm">
-                    <img alt="Selfie placeholder" className="w-full h-full object-cover grayscale opacity-50" data-alt="close up illustrative silhouette of a person for profile picture placeholder with soft lighting and clean background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCSeUxpPyskgRjpA-7ITQfvT5Fysnaa35SMATd0TU3N0wsg97dZsOAR2wSSQSFtKfTZMaI3_CcAC8zWysmcxhMy58zQXBNp_vGmxG55WjHA_4AcXB8ZEJylEFfkeJbr0qQr-yhU_nKVQQ4M6vzNP5HQwURnmIbhjN-RUpCv0BG2K7IugWQfovz7ZvKJE8QGFcy30P3Lxbi4J3h1IK_kSfuFZUQzacvkNDsd303pau684VlfKq62sIrEfuWPwDvuCRscVGwBk2nIOLs" />
-                    <div className="absolute inset-0 bg-primary/10 flex items-center justify-center">
-                      <span className="material-symbols-outlined text-white" data-icon="photo_camera">photo_camera</span>
-                    </div>
-                  </div>
-                  <span className="text-label-sm font-label-sm text-zinc-600">Open Camera</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-md">
-              <button className="bg-[#1B6D24] text-white px-xl h-12 rounded-lg font-label-sm uppercase tracking-widest hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-primary/10">
-                Submit for Review
-              </button>
-            </div>
+        {farmer?.status === "rejected" && (
+          <div className="mb-md bg-red-50 border border-red-100 rounded-lg p-4 text-sm text-red-800">
+            <div className="font-semibold mb-1">Application Rejected</div>
+            <div>{farmer.rejectionReason || "No reason provided by the admin."}</div>
           </div>
+        )}
 
-          {/* Right Column: Sidebar (4 cols) */}
-          <div className="lg:col-span-4 space-y-gutter">
-            {/* Security Notice Card */}
-            <div className="bg-[#1B6D24] rounded-2xl p-md text-white overflow-hidden relative">
-              {/* Decorative Element */}
-              <div className="absolute -top-10 -right-10 w-40 h-40 bg-white/10 rounded-full blur-3xl"></div>
-              <div className="relative z-10">
-                <div className="flex items-center gap-2 mb-md">
-                  <span className="material-symbols-outlined" data-icon="verified_user">verified_user</span>
-                  <span className="text-label-sm font-label-sm uppercase tracking-widest">Security Protocol</span>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-gutter">
+          <section className="lg:col-span-5 bg-white border border-[#E5E7EB] rounded-xl p-md">
+            <div className="flex items-center gap-2 mb-md">
+              <span className="material-symbols-outlined text-primary">
+                location_on
+              </span>
+              <h2 className="text-headline-md font-headline-md">
+                Farm Address
+              </h2>
+            </div>
+            <textarea
+              className="w-full min-h-48 bg-white border border-zinc-200 rounded-lg px-4 py-3 focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all outline-none"
+              placeholder="Enter the full physical address of your farm"
+              value={farmAddress}
+              onChange={(e) => setFarmAddress(e.target.value)}
+              disabled={!allowEdit}
+            />
+          </section>
+
+          <section className="lg:col-span-7 grid grid-cols-1 md:grid-cols-2 gap-md">
+            {(Object.keys(uploadCopy) as UploadKey[]).map((key) => {
+              const existing = getExistingImage(key);
+              const preview = previews[key] || existing;
+              return (
+                <div
+                  key={key}
+                  className="bg-white border border-[#E5E7EB] rounded-xl p-md flex flex-col"
+                >
+                  <div className="flex justify-between items-start mb-md">
+                    <div className="p-3 bg-green-50 rounded-xl text-primary">
+                      <span className="material-symbols-outlined">
+                        {uploadCopy[key].icon}
+                      </span>
+                    </div>
+                    {existing && (
+                      <a
+                        className="text-label-xs text-primary underline"
+                        href={existing}
+                        target="_blank"
+                      >
+                        View
+                      </a>
+                    )}
+                  </div>
+                  <h3 className="text-headline-md font-headline-md mb-2">
+                    {uploadCopy[key].title}
+                  </h3>
+                  <p className="text-body-md text-zinc-500 mb-md">
+                    {uploadCopy[key].helper}
+                  </p>
+                  <div className="relative aspect-[4/3] rounded-lg border-2 border-dashed border-zinc-200 bg-zinc-50 overflow-hidden flex items-center justify-center">
+                    {preview ? (
+                      <img
+                        src={preview}
+                        className="h-full w-full object-cover"
+                        alt={`${uploadCopy[key].title} preview`}
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center text-center p-4">
+                        <span className="material-symbols-outlined text-4xl text-zinc-300 mb-2">
+                          cloud_upload
+                        </span>
+                        <span className="text-label-sm text-zinc-600">
+                          Click to upload
+                        </span>
+                        <span className="text-label-xs text-zinc-400 mt-1">
+                          PNG or JPG up to 10MB
+                        </span>
+                      </div>
+                    )}
+                    <input
+                      ref={refs[key]}
+                      onChange={handleFileChange(key)}
+                      disabled={!allowEdit}
+                      accept="image/*"
+                      type="file"
+                      className="absolute inset-0 opacity-0"
+                      onClick={(e) => e.stopPropagation()}
+                      style={{ cursor: allowEdit ? "pointer" : "not-allowed" }}
+                    />
+                    {submitting && (
+                      <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                        <span className="font-semibold text-sm text-zinc-600">
+                          Uploading...
+                        </span>
+                      </div>
+                    )}
+                  </div>
                 </div>
-                <h3 className="text-headline-md font-headline-md mb-md">Your Data is Encrypted</h3>
-                <p className="text-body-md text-white/80 mb-md">We use industry-standard SSL encryption and vault storage for all identification documents. KIZ FARM never shares your personal details with third parties.</p>
-                <ul className="space-y-3">
-                  <li className="flex items-center gap-3 text-label-sm">
-                    <span className="material-symbols-outlined text-[20px]" data-icon="check_circle">check_circle</span>
-                    AES-256 Bit Encryption
-                  </li>
-                  <li className="flex items-center gap-3 text-label-sm">
-                    <span className="material-symbols-outlined text-[20px]" data-icon="check_circle">check_circle</span>
-                    NDPR Compliant Processing
-                  </li>
-                  <li className="flex items-center gap-3 text-label-sm">
-                    <span className="material-symbols-outlined text-[20px]" data-icon="check_circle">check_circle</span>
-                    Secure Cloud Storage
-                  </li>
-                </ul>
+              );
+            })}
+
+            <div className="bg-white border border-[#E5E7EB] rounded-xl p-md flex flex-col md:col-span-2">
+              <div className="flex justify-between items-start mb-md">
+                <div className="p-3 bg-green-50 rounded-xl text-primary">
+                  <span className="material-symbols-outlined">agriculture</span>
+                </div>
+                <span className="text-label-xs font-label-xs text-zinc-500 uppercase">
+                  {farmImagePreviews.length || getExistingFarmImages().length}/5
+                  images
+                </span>
+              </div>
+              <h3 className="text-headline-md font-headline-md mb-2">
+                Farm Images
+              </h3>
+              <p className="text-body-md text-zinc-500 mb-md">
+                Upload exactly 5 clear images showing the farm from different
+                angles for physical proof.
+              </p>
+              <div className="relative rounded-lg border-2 border-dashed border-zinc-200 bg-zinc-50 overflow-hidden p-3 min-h-[260px]">
+                {(farmImagePreviews.length
+                  ? farmImagePreviews
+                  : getExistingFarmImages()
+                ).length ? (
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                    {(farmImagePreviews.length
+                      ? farmImagePreviews
+                      : getExistingFarmImages()
+                    ).map((preview, index) => (
+                      <div
+                        key={`${preview}-${index}`}
+                        className="relative aspect-square overflow-hidden rounded-md bg-white border border-zinc-200"
+                      >
+                        <img
+                          src={preview}
+                          className="h-full w-full object-cover"
+                          alt={`Farm proof image ${index + 1}`}
+                        />
+                        <span className="absolute left-2 top-2 rounded bg-black/60 px-2 py-0.5 text-xs font-semibold text-white">
+                          {index + 1}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex min-h-[220px] flex-col items-center justify-center text-center p-4">
+                    <span className="material-symbols-outlined text-4xl text-zinc-300 mb-2">
+                      add_photo_alternate
+                    </span>
+                    <span className="text-label-sm text-zinc-600">
+                      Click to upload 5 farm images
+                    </span>
+                    <span className="text-label-xs text-zinc-400 mt-1">
+                      Select exactly 5 PNG or JPG files
+                    </span>
+                  </div>
+                )}
+                <input
+                  ref={farmImagesRef}
+                  onChange={handleFarmImagesChange}
+                  disabled={!allowEdit}
+                  accept="image/*"
+                  type="file"
+                  multiple
+                  className="absolute inset-0 opacity-0"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ cursor: allowEdit ? "pointer" : "not-allowed" }}
+                />
+                {submitting && (
+                  <div className="absolute inset-0 bg-white/70 flex items-center justify-center">
+                    <span className="font-semibold text-sm text-zinc-600">
+                      Uploading...
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
+          </section>
 
-            {/* Verification Progress */}
-            <div className="bg-surface-container-lowest border border-[#E5E7EB] rounded-2xl p-md">
-              <h3 className="text-label-sm font-label-sm uppercase text-zinc-400 mb-md">Verification Timeline</h3>
-              <div className="space-y-gutter relative">
-                {/* Connecting Line */}
-                <div className="absolute left-4 top-2 bottom-2 w-[2px] bg-zinc-100"></div>
-                {/* Step 1 (Completed) */}
-                <div className="relative flex gap-4">
-                  <div className="z-10 w-8 h-8 rounded-full bg-primary flex items-center justify-center text-white">
-                    <span className="material-symbols-outlined text-sm" data-icon="check">check</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-label-sm font-bold">Profile Basics</span>
-                    <span className="text-label-xs text-zinc-400">Completed June 12, 2024</span>
-                  </div>
-                </div>
-                {/* Step 2 (Active) */}
-                <div className="relative flex gap-4">
-                  <div className="z-10 w-8 h-8 rounded-full bg-primary border-4 border-white ring-2 ring-primary flex items-center justify-center text-white">
-                    <div className="w-2 h-2 bg-white rounded-full"></div>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-label-sm font-bold text-primary">Identity Check</span>
-                    <span className="text-label-xs text-zinc-500">Awaiting your documents</span>
-                  </div>
-                </div>
-                {/* Step 3 (Pending) */}
-                <div className="relative flex gap-4 opacity-50">
-                  <div className="z-10 w-8 h-8 rounded-full bg-zinc-200 flex items-center justify-center text-zinc-500">
-                    <span className="text-label-xs">3</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-label-sm font-bold">Address Verification</span>
-                    <span className="text-label-xs text-zinc-400">Locked</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Help Widget */}
-            <div className="p-md bg-green-50/50 rounded-2xl border border-green-100">
-              <div className="flex items-center gap-3 mb-2">
-                <span className="material-symbols-outlined text-primary" data-icon="help">help</span>
-                <span className="text-label-sm font-bold text-[#1B6D24]">Need Assistance?</span>
-              </div>
-              <p className="text-label-xs text-zinc-600 mb-md">Having trouble uploading? Our support team is available 24/7 to help you verify your account.</p>
-              <button className="text-primary font-bold text-label-sm hover:underline flex items-center gap-1">
-                Chat with Support
-                <span className="material-symbols-outlined text-sm" data-icon="arrow_forward">arrow_forward</span>
-              </button>
-            </div>
+          <div className="lg:col-span-12 flex justify-end pt-md">
+            <button
+              type="button"
+              onClick={handleSubmit}
+              disabled={submitting || !allowEdit}
+              className="bg-[#1B6D24] text-white px-xl h-12 rounded-lg font-label-sm uppercase tracking-widest hover:brightness-110 active:scale-95 transition-all shadow-lg shadow-primary/10 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {submitting
+                ? "Submitting..."
+                : farmer?.status === "pending"
+                  ? "Submitted"
+                  : farmer?.status === "approved"
+                    ? "Approved"
+                    : farmer?.status === "rejected"
+                      ? "Edit & Resubmit"
+                      : "Submit for Review"}
+            </button>
           </div>
         </div>
       </main>
-
-      {/* BottomNavBar (Mobile Only) */}
-      <nav className="md:hidden fixed bottom-0 left-0 w-full h-20 z-50 flex justify-around items-center px-4 pb-safe bg-white/95 backdrop-blur-lg border-t border-zinc-200">
-        <div className="flex flex-col items-center justify-center text-zinc-400">
-          <span className="material-symbols-outlined" data-icon="grid_view">grid_view</span>
-          <span className="text-[10px] font-semibold uppercase tracking-widest mt-1">Home</span>
-        </div>
-        <div className="flex flex-col items-center justify-center text-zinc-400">
-          <span className="material-symbols-outlined" data-icon="potted_plant">potted_plant</span>
-          <span className="text-[10px] font-semibold uppercase tracking-widest mt-1">Products</span>
-        </div>
-        <div className="flex flex-col items-center justify-center text-zinc-400">
-          <span className="material-symbols-outlined" data-icon="receipt_long">receipt_long</span>
-          <span className="text-[10px] font-semibold uppercase tracking-widest mt-1">Orders</span>
-        </div>
-        <div className="flex flex-col items-center justify-center text-zinc-400">
-          <span className="material-symbols-outlined" data-icon="account_balance_wallet">account_balance_wallet</span>
-          <span className="text-[10px] font-semibold uppercase tracking-widest mt-1">Earnings</span>
-        </div>
-        <div className="flex flex-col items-center justify-center text-[#1B6D24] scale-110">
-          <span className="material-symbols-outlined" data-icon="forum">forum</span>
-          <span className="text-[10px] font-semibold uppercase tracking-widest mt-1">Chat</span>
-        </div>
-      </nav>
     </div>
   );
 }
